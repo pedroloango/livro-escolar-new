@@ -36,10 +36,10 @@ export async function getCurrentUserWithSchool(): Promise<UserWithProfile | null
       return null;
     }
 
-    // Primeiro, tente obter o perfil existente
+    // Obter o perfil sem JOIN para evitar recursão em políticas
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('*, escola:escolas(*)')
+      .select('*')
       .eq('id', user.id)
       .single();
 
@@ -51,7 +51,7 @@ export async function getCurrentUserWithSchool(): Promise<UserWithProfile | null
         const newProfile = {
           id: user.id,
           email: user.email,
-          role: user.email?.toLowerCase() === 'pedro.loango@hotmail.com' ? 'admin' : 'user',
+          role: user.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase() ? 'admin' : 'user',
           is_confirmed: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -60,7 +60,7 @@ export async function getCurrentUserWithSchool(): Promise<UserWithProfile | null
         const { data: createdProfile, error: createError } = await supabase
           .from('profiles')
           .insert([newProfile])
-          .select('*, escola:escolas(*)')
+          .select('*')
           .single();
 
         if (createError) {
@@ -68,45 +68,42 @@ export async function getCurrentUserWithSchool(): Promise<UserWithProfile | null
           return null;
         }
 
+        // Buscar escola associada após criar perfil
+        let escola = null;
+        if (createdProfile.escola_id) {
+          const { data: escolaData, error: escolaError } = await supabase
+            .from('escolas')
+            .select('*')
+            .eq('id', createdProfile.escola_id)
+            .single();
+          if (!escolaError) escola = escolaData;
+        }
         return {
           id: createdProfile.id,
           email: createdProfile.email,
-          profile: {
-            ...createdProfile,
-            escola: createdProfile.escola || null
-          }
+          profile: { ...createdProfile, escola }
         };
       }
       
       return null;
     }
 
-    // Se o perfil existe mas não tem escola associada, associe à primeira escola disponível
-    if (profile && !profile.escola) {
-      const { data: escolas, error: escolasError } = await supabase
+    // Se o perfil existe, buscar a escola associada posteriormente
+    let escola = null;
+    if (profile && profile.escola_id) {
+      const { data: escolaData, error: escolaError } = await supabase
         .from('escolas')
         .select('*')
-        .limit(1);
-
-      if (!escolasError && escolas && escolas.length > 0) {
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({ escola_id: escolas[0].id })
-          .eq('id', user.id);
-
-        if (!updateError) {
-          profile.escola = escolas[0];
-        }
-      }
+        .eq('id', profile.escola_id)
+        .single();
+      if (!escolaError) escola = escolaData;
     }
 
+    // Retornar usuário com perfil e escola
     return {
       id: profile.id,
       email: profile.email,
-      profile: {
-        ...profile,
-        escola: profile.escola || null
-      }
+      profile: { ...profile, escola }
     };
   } catch (error) {
     console.error('Erro ao obter usuário:', error);
