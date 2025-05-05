@@ -9,7 +9,8 @@ import {
   FileSpreadsheet, 
   Reply, 
   ShieldCheck,
-  School as SchoolIcon
+  School as SchoolIcon,
+  GraduationCap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,11 @@ const links: SidebarLink[] = [
     href: '/students',
     icon: Users,
     title: 'Alunos',
+  },
+  {
+    href: '/teachers',
+    icon: GraduationCap,
+    title: 'Professores',
   },
   {
     href: '/books',

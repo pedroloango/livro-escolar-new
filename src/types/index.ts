@@ -18,7 +18,8 @@ export interface Book {
 
 export interface Loan {
   id?: string;
-  aluno_id: string;
+  aluno_id?: string;
+  professor_id?: string;
   livro_id: string;
   data_retirada: string;
   quantidade_retirada: number;
@@ -26,6 +27,7 @@ export interface Loan {
   quantidade_devolvida?: number;
   status: "Emprestado" | "Devolvido" | "Pendente";
   aluno?: Student;
+  professor?: import('@/services/teacherService').Teacher;
   livro?: Book;
   escola_id?: string;
 }

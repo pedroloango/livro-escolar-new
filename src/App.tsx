@@ -20,6 +20,7 @@ import Users from "./pages/admin/Users";
 import NewUser from "./pages/admin/NewUser";
 import Schools from "./pages/admin/Schools";
 import NotFound from "./pages/NotFound";
+import TeachersPage from "./pages/Teachers";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,7 @@ const App = () => (
           <Route path="/admin/users" element={<Users />} />
           <Route path="/admin/users/new" element={<NewUser />} />
           <Route path="/admin/schools" element={<Schools />} />
+          <Route path="/teachers" element={<TeachersPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AuthProvider>

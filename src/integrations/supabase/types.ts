@@ -208,6 +208,30 @@ export type Database = {
           },
         ]
       }
+      professores: {
+        Row: {
+          id: string
+          nome: string
+          email: string | null
+          telefone: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          nome: string
+          email?: string | null
+          telefone?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          nome?: string
+          email?: string | null
+          telefone?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
