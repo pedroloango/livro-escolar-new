@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, ArrowDownToLine } from 'lucide-react';
-import { getLoans } from '@/services/loanService';
+import { getLoans, deleteLoan } from '@/services/loanService';
 import { Loan } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
 import { ColumnDef } from '@tanstack/react-table';
@@ -19,6 +19,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 
 interface LoansProps {
   returnMode?: boolean;
@@ -38,6 +39,8 @@ export default function Loans({
   const [bookFilter, setBookFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const navigate = useNavigate();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
 
   useEffect(() => {
     fetchLoans();
@@ -84,6 +87,25 @@ export default function Loans({
       onSelectLoanForReturn(loan);
     } else {
       navigate('/returns', { state: { loanId: loan.id } });
+    }
+  };
+
+  const handleDeleteClick = (loan: Loan) => {
+    setLoanToDelete(loan);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!loanToDelete) return;
+    console.log('Tentando excluir empréstimo:', loanToDelete.id);
+    try {
+      await deleteLoan(loanToDelete.id!);
+      toast.success('Empréstimo excluído com sucesso!');
+      setDeleteDialogOpen(false);
+      setLoanToDelete(null);
+      fetchLoans();
+    } catch (error) {
+      toast.error('Erro ao excluir empréstimo');
     }
   };
 
@@ -155,20 +177,28 @@ export default function Loans({
       id: 'actions',
       cell: ({ row }) => {
         const loan = row.original;
-        if (loan.status === 'Emprestado' || loan.status === 'Pendente') {
-          return (
+        return (
+          <div className="flex gap-2">
+            {(loan.status === 'Emprestado' || loan.status === 'Pendente') && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleReturnClick(loan)}
+                className="flex items-center gap-1"
+              >
+                <ArrowDownToLine className="h-4 w-4" />
+                Devolver
+              </Button>
+            )}
             <Button
-              variant="outline"
+              variant="destructive"
               size="sm"
-              onClick={() => handleReturnClick(loan)}
-              className="flex items-center gap-1"
+              onClick={() => handleDeleteClick(loan)}
             >
-              <ArrowDownToLine className="h-4 w-4" />
-              Devolver
+              Excluir
             </Button>
-          );
-        }
-        return null;
+          </div>
+        );
       },
     },
   ];
@@ -238,6 +268,22 @@ export default function Loans({
             </>
           )}
         </div>
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar exclusão</DialogTitle>
+            </DialogHeader>
+            <p>Tem certeza que deseja excluir este empréstimo? Esta ação não poderá ser desfeita.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                Excluir
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DashboardLayout>
     );
   }

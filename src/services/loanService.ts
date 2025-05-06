@@ -129,6 +129,19 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
     if (loan.aluno_id) {
       loanData.aluno_id = loan.aluno_id;
       loanData.professor_id = null;
+      // Buscar dados do aluno para preencher serie, turma e turno
+      const { data: aluno, error: alunoError } = await supabase
+        .from('alunos')
+        .select('*')
+        .eq('id', loan.aluno_id)
+        .single();
+      if (alunoError) {
+        console.error('Erro ao buscar dados do aluno:', alunoError);
+        throw alunoError;
+      }
+      loanData.serie = aluno.serie;
+      loanData.turma = aluno.turma;
+      loanData.turno = aluno.turno;
     }
     // Se for empréstimo para professor
     else if (loan.professor_id) {
