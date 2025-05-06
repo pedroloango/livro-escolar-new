@@ -30,6 +30,9 @@ export interface Loan {
   professor?: import('@/services/teacherService').Teacher;
   livro?: Book;
   escola_id?: string;
+  serie?: string;
+  turma?: string;
+  turno?: string;
 }
 
 export interface User {

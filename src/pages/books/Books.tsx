@@ -1,10 +1,9 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Barcode } from 'lucide-react';
-import { getBooks, deleteBook, findBookByBarcode } from '@/services/bookService';
+import { getBooks, deleteBook, findBookByBarcode, getBooksCount } from '@/services/bookService';
 import { lookupBookByIsbn } from '@/services/bookLookupService';
 import { Book } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
@@ -43,10 +42,12 @@ export default function Books() {
   const [bookInfo, setBookInfo] = useState<any>(null);
   const [isLookupDialogOpen, setIsLookupDialogOpen] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [totalBooks, setTotalBooks] = useState<number>(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchBooks();
+    fetchBooksCount();
   }, []);
 
   useEffect(() => {
@@ -72,6 +73,15 @@ export default function Books() {
       toast.error('Erro ao carregar livros');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchBooksCount = async () => {
+    try {
+      const count = await getBooksCount();
+      setTotalBooks(count);
+    } catch (error) {
+      console.error('Failed to fetch books count:', error);
     }
   };
 
@@ -219,7 +229,9 @@ export default function Books() {
                 Escanear Código de Barras
               </Button>
             </div>
-
+            <div className="mt-4 mb-2 text-right text-muted-foreground text-sm">
+              Total de livros cadastrados: <span className="font-bold text-primary">{totalBooks}</span>
+            </div>
             <DataTable
               columns={columns}
               data={filteredBooks}

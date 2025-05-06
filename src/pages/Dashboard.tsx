@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getStudents } from '@/services/studentService';
-import { getBooks } from '@/services/bookService';
+import { getBooks, getBooksCount } from '@/services/bookService';
 import { getLoans, getActiveLoans } from '@/services/loanService';
 import { Link } from 'react-router-dom';
 import { Book, Users, BookMarked, ArrowDownToLine } from 'lucide-react';
@@ -21,16 +21,16 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [students, books, loans, activeLoans] = await Promise.all([
+        const [students, booksCount, loans, activeLoans] = await Promise.all([
           getStudents(),
-          getBooks(),
+          getBooksCount(),
           getLoans(),
           getActiveLoans(),
         ]);
 
         setStats({
           totalStudents: students.length,
-          totalBooks: books.length,
+          totalBooks: booksCount,
           activeLoans: activeLoans.length,
           totalLoans: loans.length,
         });

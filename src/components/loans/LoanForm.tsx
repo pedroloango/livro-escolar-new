@@ -118,6 +118,17 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const turmas = Array.from(new Set(students.map(student => student.turma)));
   const turnos = Array.from(new Set(students.map(student => student.turno)));
 
+  // Adicionar manualmente G4 e G5 às séries
+  const allSeries = Array.from(new Set([...students.map(student => student.serie.toString()), 'G4', 'G5']))
+    .sort((a, b) => {
+      // Ordenação: G4, G5, depois números
+      if (a === 'G4') return -1;
+      if (b === 'G4') return 1;
+      if (a === 'G5') return -1;
+      if (b === 'G5') return 1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+
   if (loading) {
     return (
       <Card className="w-full">
@@ -197,23 +208,71 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
               </select>
             </div>
           ) : (
-            <div className="space-y-2">
-              <Label htmlFor="professor_id">Professor</Label>
-              <select
-                id="professor_id"
-                {...register('professor_id', { required: personType === 'professor' })}
-                value={watchTeacherId}
-                onChange={handlePersonSelect}
-                className="w-full border rounded p-2"
-              >
-                <option value="">Selecione um professor</option>
-                {filteredTeachers.map((teacher) => (
-                  <option key={teacher.id} value={teacher.id}>
-                    {teacher.nome} {teacher.email ? `- ${teacher.email}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="professor_id">Professor</Label>
+                <select
+                  id="professor_id"
+                  {...register('professor_id', { required: personType === 'professor' })}
+                  value={watchTeacherId}
+                  onChange={handlePersonSelect}
+                  className="w-full border rounded p-2"
+                >
+                  <option value="">Selecione um professor</option>
+                  {filteredTeachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.nome} {teacher.email ? `- ${teacher.email}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* Campos de Série, Turma e Turno para Professor */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="serie">Série</Label>
+                  <Select
+                    value={watch('serie') || undefined}
+                    onValueChange={value => setValue('serie', value, { shouldValidate: true })}
+                  >
+                    <SelectTrigger id="serie">
+                      <SelectValue placeholder="Selecione a série" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allSeries.map((serie) => (
+                        <SelectItem key={serie} value={serie}>{serie}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.serie && <p className="text-red-500 text-sm">Série é obrigatória</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="turma">Turma</Label>
+                  <Input
+                    id="turma"
+                    {...register('turma', { required: personType === 'professor' })}
+                    value={watch('turma') || ''}
+                    onChange={e => setValue('turma', e.target.value)}
+                  />
+                  {errors.turma && <p className="text-red-500 text-sm">Turma é obrigatória</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="turno">Turno</Label>
+                  <Select
+                    value={watch('turno') || undefined}
+                    onValueChange={value => setValue('turno', value, { shouldValidate: true })}
+                  >
+                    <SelectTrigger id="turno">
+                      <SelectValue placeholder="Selecione o turno" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Matutino">Matutino</SelectItem>
+                      <SelectItem value="Vespertino">Vespertino</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {errors.turno && <p className="text-red-500 text-sm">Turno é obrigatório</p>}
+                </div>
+              </div>
+            </>
           )}
 
           {showFilters && (
@@ -229,9 +288,9 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    {series.map((serie) => (
+                    {allSeries.map((serie) => (
                       <SelectItem key={serie} value={serie}>
-                        {`${serie}º`}
+                        {serie}
                       </SelectItem>
                     ))}
                   </SelectContent>

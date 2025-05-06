@@ -3,8 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 export type Teacher = {
   id: string;
   nome: string;
-  email?: string;
-  telefone?: string;
   created_at?: string;
 };
 

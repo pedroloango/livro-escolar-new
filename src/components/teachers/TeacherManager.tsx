@@ -5,10 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Table } from '@/components/ui/table';
 import { toast } from 'sonner';
 
-const initialForm: Omit<Teacher, 'id' | 'created_at'> = {
+const initialForm: Omit<Teacher, 'id' | 'created_at' | 'email' | 'telefone'> = {
   nome: '',
-  email: '',
-  telefone: '',
 };
 
 export default function TeacherManager() {
@@ -59,7 +57,7 @@ export default function TeacherManager() {
   }
 
   function handleEdit(teacher: Teacher) {
-    setForm({ nome: teacher.nome, email: teacher.email || '', telefone: teacher.telefone || '' });
+    setForm({ nome: teacher.nome });
     setEditingId(teacher.id);
   }
 
@@ -87,8 +85,6 @@ export default function TeacherManager() {
       <h2 className="text-xl font-bold mb-4">Cadastro de Professores</h2>
       <form onSubmit={handleSubmit} className="space-y-2 mb-6">
         <Input name="nome" placeholder="Nome" value={form.nome} onChange={handleChange} required />
-        <Input name="email" placeholder="E-mail" value={form.email} onChange={handleChange} type="email" />
-        <Input name="telefone" placeholder="Telefone" value={form.telefone} onChange={handleChange} />
         <div className="flex gap-2">
           <Button type="submit" disabled={loading}>{editingId ? 'Atualizar' : 'Cadastrar'}</Button>
           {editingId && <Button type="button" variant="secondary" onClick={handleCancelEdit}>Cancelar</Button>}
@@ -100,8 +96,6 @@ export default function TeacherManager() {
           <thead>
             <tr>
               <th>Nome</th>
-              <th>E-mail</th>
-              <th>Telefone</th>
               <th>Ações</th>
             </tr>
           </thead>
@@ -109,8 +103,6 @@ export default function TeacherManager() {
             {teachers.map((teacher) => (
               <tr key={teacher.id}>
                 <td>{teacher.nome}</td>
-                <td>{teacher.email}</td>
-                <td>{teacher.telefone}</td>
                 <td>
                   <Button size="sm" variant="outline" onClick={() => handleEdit(teacher)} disabled={loading}>Editar</Button>
                   <Button size="sm" variant="destructive" onClick={() => handleDelete(teacher.id)} disabled={loading} className="ml-2">Excluir</Button>
@@ -118,7 +110,7 @@ export default function TeacherManager() {
               </tr>
             ))}
             {teachers.length === 0 && (
-              <tr><td colSpan={4} className="text-center">Nenhum professor cadastrado.</td></tr>
+              <tr><td colSpan={2} className="text-center">Nenhum professor cadastrado.</td></tr>
             )}
           </tbody>
         </Table>

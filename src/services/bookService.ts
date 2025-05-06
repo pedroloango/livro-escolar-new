@@ -1,4 +1,3 @@
-
 import { Book } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
@@ -157,6 +156,28 @@ export const deleteBook = async (id: string): Promise<void> => {
     }
   } catch (error) {
     console.error('Erro ao excluir livro:', error);
+    throw error;
+  }
+};
+
+export const getBooksCount = async (): Promise<number> => {
+  try {
+    // Obter o usuário atual para filtrar por escola_id
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+
+    let query = supabase.from('livros').select('*', { count: 'exact', head: true });
+    if (escolaId) {
+      query = query.eq('escola_id', escolaId);
+    }
+    const { count, error } = await query;
+    if (error) {
+      console.error('Erro ao contar livros:', error);
+      throw error;
+    }
+    return count || 0;
+  } catch (error) {
+    console.error('Erro ao contar livros:', error);
     throw error;
   }
 };

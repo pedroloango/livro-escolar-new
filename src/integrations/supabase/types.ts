@@ -212,22 +212,16 @@ export type Database = {
         Row: {
           id: string
           nome: string
-          email: string | null
-          telefone: string | null
           created_at: string
         }
         Insert: {
           id?: string
           nome: string
-          email?: string | null
-          telefone?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           nome?: string
-          email?: string | null
-          telefone?: string | null
           created_at?: string
         }
         Relationships: []
