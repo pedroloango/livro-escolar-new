@@ -7,6 +7,27 @@ import { getLoans, getActiveLoans } from '@/services/loanService';
 import { Link } from 'react-router-dom';
 import { Book, Users, BookMarked, ArrowDownToLine } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { Bar, Doughnut } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Title,
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Title
+);
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -17,6 +38,11 @@ export default function Dashboard() {
   });
   const [loading, setLoading] = useState(true);
   const { isAdmin } = useAuth();
+
+  // Novos estados para os gráficos
+  const [emprestimosPorSerie, setEmprestimosPorSerie] = useState<any>(null);
+  const [emprestimosPorStatus, setEmprestimosPorStatus] = useState<any>(null);
+  const [topAlunos, setTopAlunos] = useState<any>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -33,6 +59,63 @@ export default function Dashboard() {
           totalBooks: booksCount,
           activeLoans: activeLoans.length,
           totalLoans: loans.length,
+        });
+
+        // Gráfico de Empréstimos por Série
+        const serieCount: Record<string, number> = {};
+        loans.forEach((loan: any) => {
+          const serie = loan.serie || 'N/A';
+          serieCount[serie] = (serieCount[serie] || 0) + 1;
+        });
+        const serieLabels = Object.keys(serieCount);
+        const serieData = Object.values(serieCount);
+        setEmprestimosPorSerie({
+          labels: serieLabels,
+          datasets: [
+            {
+              label: 'Empréstimos por Série',
+              data: serieData,
+              backgroundColor: 'rgba(75, 192, 192, 0.6)',
+            },
+          ],
+        });
+
+        // Gráfico de Empréstimos por Status
+        const statusCount: Record<string, number> = {};
+        loans.forEach((loan: any) => {
+          const status = loan.status || 'N/A';
+          statusCount[status] = (statusCount[status] || 0) + 1;
+        });
+        const statusLabels = Object.keys(statusCount);
+        const statusData = Object.values(statusCount);
+        setEmprestimosPorStatus({
+          labels: statusLabels,
+          datasets: [
+            {
+              data: statusData,
+              backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#8884d8', '#82ca9d'],
+            },
+          ],
+        });
+
+        // Gráfico Top 15 Alunos
+        const alunoCount: Record<string, number> = {};
+        loans.forEach((loan: any) => {
+          const nome = loan.aluno?.nome || 'N/A';
+          alunoCount[nome] = (alunoCount[nome] || 0) + 1;
+        });
+        const sortedAlunos = Object.entries(alunoCount)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 15);
+        setTopAlunos({
+          labels: sortedAlunos.map(([nome]) => nome),
+          datasets: [
+            {
+              label: 'Top 15 Alunos',
+              data: sortedAlunos.map(([, count]) => count),
+              backgroundColor: 'rgba(153, 102, 255, 0.6)',
+            },
+          ],
         });
       } catch (error) {
         console.error('Failed to fetch stats:', error);
@@ -223,6 +306,33 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <h2 className="text-xl font-bold">Empréstimos por Série</h2>
+            {emprestimosPorSerie && (
+              <div style={{ height: 300 }}>
+                <Bar data={emprestimosPorSerie} options={{ maintainAspectRatio: false }} />
+              </div>
+            )}
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">Empréstimos por Status</h2>
+            {emprestimosPorStatus && (
+              <div style={{ height: 300 }}>
+                <Doughnut data={emprestimosPorStatus} options={{ maintainAspectRatio: false }} />
+              </div>
+            )}
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">Top 15 Alunos</h2>
+            {topAlunos && (
+              <div style={{ height: 300 }}>
+                <Bar data={topAlunos} options={{ indexAxis: 'y', maintainAspectRatio: false }} />
+              </div>
+            )}
           </div>
         </div>
       </div>
