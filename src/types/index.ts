@@ -13,6 +13,8 @@ export interface Book {
   id?: string;
   titulo: string;
   codigo_barras: string;
+  autor?: string;
+  editora?: string;
   escola_id?: string;
 }
 

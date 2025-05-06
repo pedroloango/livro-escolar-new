@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -14,7 +13,35 @@ export default function NewLoan() {
   const handleSubmit = async (data: Loan) => {
     try {
       setIsSubmitting(true);
-      await createLoan(data);
+      
+      // Validate required fields
+      if (!data.livro_id) {
+        toast.error('Selecione um livro');
+        return;
+      }
+      
+      if (!data.aluno_id && !data.professor_id) {
+        toast.error('Selecione um aluno ou professor');
+        return;
+      }
+      
+      if (!data.data_retirada) {
+        toast.error('Data de retirada é obrigatória');
+        return;
+      }
+      
+      if (!data.quantidade_retirada || data.quantidade_retirada < 1) {
+        toast.error('Quantidade deve ser maior que zero');
+        return;
+      }
+      
+      // Ensure status is set
+      const loanData: Loan = {
+        ...data,
+        status: 'Emprestado' as const
+      };
+      
+      await createLoan(loanData);
       toast.success('Empréstimo registrado com sucesso!');
       navigate('/loans');
     } catch (error) {

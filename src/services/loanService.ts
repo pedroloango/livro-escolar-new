@@ -1,4 +1,3 @@
-
 import { Loan, Student, Book } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
@@ -117,16 +116,65 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
     // Use correct date format to avoid timezone issues
     const dateRetirada = new Date(loan.data_retirada);
     
+    // Preparar os dados do empréstimo
+    const loanData: any = {
+      livro_id: loan.livro_id,
+      data_retirada: dateRetirada.toISOString(),
+      quantidade_retirada: loan.quantidade_retirada || 1,
+      status: 'Emprestado',
+      escola_id: escolaId
+    };
+
+    // Se for empréstimo para aluno
+    if (loan.aluno_id) {
+      loanData.aluno_id = loan.aluno_id;
+      loanData.professor_id = null;
+    }
+    // Se for empréstimo para professor
+    else if (loan.professor_id) {
+      // Buscar dados do professor
+      const { data: professor, error: professorError } = await supabase
+        .from('professores')
+        .select('*')
+        .eq('id', loan.professor_id)
+        .single();
+
+      if (professorError) {
+        console.error('Erro ao buscar dados do professor:', professorError);
+        throw professorError;
+      }
+
+      // Criar registro na tabela de alunos com os dados do professor
+      const { data: professorAluno, error: professorAlunoError } = await supabase
+        .from('alunos')
+        .insert({
+          nome: professor.nome,
+          serie: parseInt(loan.serie || '0'),
+          turma: loan.turma || 'PROF',
+          turno: loan.turno || 'PROF',
+          sexo: 'N/A',
+          data_nascimento: new Date().toISOString(),
+          escola_id: escolaId
+        })
+        .select()
+        .single();
+
+      if (professorAlunoError) {
+        console.error('Erro ao criar registro de professor:', professorAlunoError);
+        throw professorAlunoError;
+      }
+
+      loanData.professor_id = loan.professor_id;
+      loanData.aluno_id = professorAluno.id;
+      // Adicionar campos do professor
+      if (loan.serie) loanData.serie = loan.serie;
+      if (loan.turma) loanData.turma = loan.turma;
+      if (loan.turno) loanData.turno = loan.turno;
+    }
+    
     const { data, error } = await supabase
       .from('emprestimos')
-      .insert({
-        aluno_id: loan.aluno_id,
-        livro_id: loan.livro_id,
-        data_retirada: dateRetirada.toISOString(),
-        quantidade_retirada: loan.quantidade_retirada || 1,
-        status: 'Emprestado',
-        escola_id: escolaId
-      })
+      .insert(loanData)
       .select()
       .single();
     

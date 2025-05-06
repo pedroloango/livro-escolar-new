@@ -35,6 +35,8 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
   const [filteredTeachers, setFilteredTeachers] = useState<Teacher[]>([]);
+  const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
+  const [bookSearch, setBookSearch] = useState('');
   const [serieFilter, setSerieFilter] = useState<string>('all');
   const [turmaFilter, setTurmaFilter] = useState<string>('all');
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
@@ -48,8 +50,12 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       livro_id: '',
       data_retirada: formatDateForInput(new Date()),
       quantidade_retirada: 1,
-      status: 'Emprestado'
-    }
+      status: 'Emprestado',
+      serie: '',
+      turma: '',
+      turno: ''
+    },
+    mode: 'onChange'
   });
 
   const watchStudentId = watch('aluno_id');
@@ -69,6 +75,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
         setTeachers(teachersData);
         setFilteredTeachers(teachersData);
         setBooks(booksData);
+        setFilteredBooks(booksData);
       } catch (error) {
         console.error('Failed to load data:', error);
       } finally {
@@ -96,6 +103,39 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   useEffect(() => {
     setFilteredTeachers(teachers);
   }, [teachers]);
+
+  // Add validation rules
+  useEffect(() => {
+    if (personType === 'aluno') {
+      setValue('aluno_id', watchStudentId, { shouldValidate: true });
+      setValue('professor_id', '', { shouldValidate: true });
+      setValue('serie', '', { shouldValidate: true });
+      setValue('turma', '', { shouldValidate: true });
+      setValue('turno', '', { shouldValidate: true });
+    } else {
+      setValue('professor_id', watchTeacherId, { shouldValidate: true });
+      setValue('aluno_id', '', { shouldValidate: true });
+    }
+  }, [personType, watchStudentId, watchTeacherId, setValue]);
+
+  useEffect(() => {
+    setValue('livro_id', watchBookId, { shouldValidate: true });
+  }, [watchBookId, setValue]);
+
+  // Adicionar efeito para filtrar livros
+  useEffect(() => {
+    if (bookSearch.trim() === '') {
+      setFilteredBooks(books);
+    } else {
+      const searchTerm = bookSearch.toLowerCase();
+      const filtered = books.filter(book => 
+        book.titulo.toLowerCase().includes(searchTerm) ||
+        (book.autor && book.autor.toLowerCase().includes(searchTerm)) ||
+        (book.editora && book.editora.toLowerCase().includes(searchTerm))
+      );
+      setFilteredBooks(filtered);
+    }
+  }, [bookSearch, books]);
 
   const handleBarcodeScan = async (barcode: string) => {
     try {
@@ -157,6 +197,60 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
     }
   }
 
+  const validateForm = (data: Loan) => {
+    if (!data.livro_id) {
+      toast.error('Selecione um livro');
+      return false;
+    }
+
+    if (personType === 'aluno') {
+      if (!data.aluno_id) {
+        toast.error('Selecione um aluno');
+        return false;
+      }
+      // Limpar campos do professor quando for aluno
+      setValue('professor_id', '');
+      setValue('serie', '');
+      setValue('turma', '');
+      setValue('turno', '');
+    } else {
+      if (!data.professor_id) {
+        toast.error('Selecione um professor');
+        return false;
+      }
+      // Limpar campo do aluno quando for professor
+      setValue('aluno_id', '');
+    }
+
+    if (!data.data_retirada) {
+      toast.error('Data de retirada é obrigatória');
+      return false;
+    }
+
+    if (!data.quantidade_retirada || data.quantidade_retirada < 1) {
+      toast.error('Quantidade deve ser maior que zero');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleFormSubmit = (data: Loan) => {
+    // Garantir que os campos estejam limpos antes de validar
+    if (personType === 'aluno') {
+      data.professor_id = '';
+      data.serie = '';
+      data.turma = '';
+      data.turno = '';
+    } else {
+      data.aluno_id = '';
+    }
+
+    if (validateForm(data)) {
+      onSubmit(data);
+    }
+  };
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -172,7 +266,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
           </Button>
         </div>
       </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form onSubmit={handleSubmit(handleFormSubmit)}>
         <CardContent className="space-y-4">
           {/* Seletor Aluno/Professor */}
           <div className="flex gap-4 items-center">
@@ -221,7 +315,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                   <option value="">Selecione um professor</option>
                   {filteredTeachers.map((teacher) => (
                     <option key={teacher.id} value={teacher.id}>
-                      {teacher.nome} {teacher.email ? `- ${teacher.email}` : ''}
+                      {teacher.nome}
                     </option>
                   ))}
                 </select>
@@ -341,34 +435,47 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
 
           <div className="space-y-2">
             <Label htmlFor="livro_id">Livro</Label>
-            <div className="flex space-x-2">
-              <div className="flex-1">
-                <Select
-                  value={watchBookId}
-                  onValueChange={(value) => setValue('livro_id', value)}
+            <div className="flex flex-col space-y-2">
+              <div className="flex space-x-2">
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Pesquisar livro por título, autor ou editora..."
+                    value={bookSearch}
+                    onChange={(e) => setBookSearch(e.target.value)}
+                    className="mb-2"
+                  />
+                  <Select
+                    value={watchBookId}
+                    onValueChange={(value) => setValue('livro_id', value, { shouldValidate: true })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um livro" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredBooks.map((book) => (
+                        <SelectItem key={book.id} value={book.id || ''}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{book.titulo}</span>
+                            {book.autor && <span className="text-sm text-muted-foreground">Autor: {book.autor}</span>}
+                            {book.editora && <span className="text-sm text-muted-foreground">Editora: {book.editora}</span>}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => setIsScannerOpen(true)}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um livro" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {books.map((book) => (
-                      <SelectItem key={book.id} value={book.id || ''}>
-                        {book.titulo}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Barcode className="h-5 w-5" />
+                </Button>
               </div>
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="icon" 
-                onClick={() => setIsScannerOpen(true)}
-              >
-                <Barcode className="h-5 w-5" />
-              </Button>
+              {errors.livro_id && <p className="text-red-500 text-sm">Livro é obrigatório</p>}
             </div>
-            {errors.livro_id && <p className="text-red-500 text-sm">{errors.livro_id.message}</p>}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
