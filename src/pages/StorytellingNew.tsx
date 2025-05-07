@@ -47,7 +47,7 @@ export default function StorytellingNew() {
     try {
       const book = await findBookByBarcode(barcode);
       if (book && book.id) {
-        setForm(f => ({ ...f, livro_id: book.id }));
+        setForm(f => ({ ...f, livro_id: String(book.id) }));
         toast.success(`Livro selecionado: ${book.titulo}`);
       } else {
         toast.error('Livro não encontrado com este código de barras');
@@ -123,7 +123,7 @@ export default function StorytellingNew() {
               <select name="livro_id" value={form.livro_id || ''} onChange={handleChange} required className="border rounded px-2 py-1 w-full">
                 <option value="">Selecione o livro</option>
                 {books.map(b => (
-                  <option key={b.id} value={b.id}>{b.titulo}</option>
+                  <option key={b.id} value={String(b.id)}>{b.titulo}</option>
                 ))}
               </select>
               <Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}>
