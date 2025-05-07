@@ -21,6 +21,8 @@ import NewUser from "./pages/admin/NewUser";
 import Schools from "./pages/admin/Schools";
 import NotFound from "./pages/NotFound";
 import TeachersPage from "./pages/Teachers";
+import StorytellingPage from "./pages/Storytelling";
+import StorytellingNew from "./pages/StorytellingNew";
 
 const queryClient = new QueryClient();
 
@@ -46,6 +48,8 @@ const App = () => (
           <Route path="/admin/users/new" element={<NewUser />} />
           <Route path="/admin/schools" element={<Schools />} />
           <Route path="/teachers" element={<TeachersPage />} />
+          <Route path="/storytelling" element={<StorytellingPage />} />
+          <Route path="/storytelling/new" element={<StorytellingNew />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AuthProvider>

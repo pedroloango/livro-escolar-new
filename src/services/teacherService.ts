@@ -4,6 +4,7 @@ export type Teacher = {
   id: string;
   nome: string;
   created_at?: string;
+  contacao_historias?: boolean;
 };
 
 export async function getTeachers(): Promise<Teacher[]> {

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 const initialForm: Omit<Teacher, 'id' | 'created_at' | 'email' | 'telefone'> = {
   nome: '',
+  contacao_historias: false,
 };
 
 export default function TeacherManager() {
@@ -31,8 +32,13 @@ export default function TeacherManager() {
     fetchTeachers();
   }, []);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setForm({ ...form, [e.target.name]: e.target.value });
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value, type } = e.target;
+    setForm({
+      ...form,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked :
+        name === 'contacao_historias' ? value === 'true' : value
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -57,7 +63,7 @@ export default function TeacherManager() {
   }
 
   function handleEdit(teacher: Teacher) {
-    setForm({ nome: teacher.nome });
+    setForm({ nome: teacher.nome, contacao_historias: !!teacher.contacao_historias });
     setEditingId(teacher.id);
   }
 
@@ -85,6 +91,19 @@ export default function TeacherManager() {
       <h2 className="text-xl font-bold mb-4">Cadastro de Professores</h2>
       <form onSubmit={handleSubmit} className="space-y-2 mb-6">
         <Input name="nome" placeholder="Nome" value={form.nome} onChange={handleChange} required />
+        <div>
+          <label className="block mb-1 font-medium">Contação de histórias</label>
+          <select
+            name="contacao_historias"
+            value={form.contacao_historias ? 'true' : 'false'}
+            onChange={handleChange}
+            className="border rounded px-2 py-1"
+            required
+          >
+            <option value="false">Não</option>
+            <option value="true">Sim</option>
+          </select>
+        </div>
         <div className="flex gap-2">
           <Button type="submit" disabled={loading}>{editingId ? 'Atualizar' : 'Cadastrar'}</Button>
           {editingId && <Button type="button" variant="secondary" onClick={handleCancelEdit}>Cancelar</Button>}
@@ -96,6 +115,7 @@ export default function TeacherManager() {
           <thead>
             <tr>
               <th>Nome</th>
+              <th>Contação de histórias</th>
               <th>Ações</th>
             </tr>
           </thead>
@@ -103,6 +123,7 @@ export default function TeacherManager() {
             {teachers.map((teacher) => (
               <tr key={teacher.id}>
                 <td>{teacher.nome}</td>
+                <td>{teacher.contacao_historias ? 'Sim' : 'Não'}</td>
                 <td>
                   <Button size="sm" variant="outline" onClick={() => handleEdit(teacher)} disabled={loading}>Editar</Button>
                   <Button size="sm" variant="destructive" onClick={() => handleDelete(teacher.id)} disabled={loading} className="ml-2">Excluir</Button>
@@ -110,7 +131,7 @@ export default function TeacherManager() {
               </tr>
             ))}
             {teachers.length === 0 && (
-              <tr><td colSpan={2} className="text-center">Nenhum professor cadastrado.</td></tr>
+              <tr><td colSpan={3} className="text-center">Nenhum professor cadastrado.</td></tr>
             )}
           </tbody>
         </Table>

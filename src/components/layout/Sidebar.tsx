@@ -68,7 +68,12 @@ const links: SidebarLink[] = [
     icon: ShieldCheck,
     title: 'Usuários',
     adminOnly: true
-  }
+  },
+  {
+    href: '/storytelling',
+    icon: BookOpen,
+    title: 'Contação de histórias',
+  },
 ];
 
 // Componente de conteúdo da barra lateral que pode ser reutilizado
