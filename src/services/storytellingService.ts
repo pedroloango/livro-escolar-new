@@ -10,28 +10,15 @@ export type Storytelling = {
   data_contacao: string;
   profissional_id: string;
   qtd_alunos: number;
-  professor_nome?: string;
-  profissional_nome?: string;
-  livro_titulo?: string;
 };
 
 export async function getStorytellings(): Promise<Storytelling[]> {
   const { data, error } = await supabase
     .from('contacao_historias')
-    .select(`*,
-      professor:professor_id (nome),
-      profissional:profissional_id (nome),
-      livro:livro_id (titulo)
-    `)
+    .select('*')
     .order('data_contacao', { ascending: false });
   if (error) throw error;
-  // Mapear para adicionar os nomes/títulos ao objeto principal
-  return (data as any[]).map((row) => ({
-    ...row,
-    professor_nome: row.professor?.nome,
-    profissional_nome: row.profissional?.nome,
-    livro_titulo: row.livro?.titulo,
-  }));
+  return data as Storytelling[];
 }
 
 export async function addStorytelling(story: Omit<Storytelling, 'id'>): Promise<Storytelling> {

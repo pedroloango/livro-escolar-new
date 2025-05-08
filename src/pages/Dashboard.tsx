@@ -18,7 +18,6 @@ import {
   Legend,
   Title,
 } from 'chart.js';
-import { getStorytellings } from '@/services/storytellingService';
 
 ChartJS.register(
   CategoryScale,
@@ -44,17 +43,15 @@ export default function Dashboard() {
   const [emprestimosPorSerie, setEmprestimosPorSerie] = useState<any>(null);
   const [emprestimosPorStatus, setEmprestimosPorStatus] = useState<any>(null);
   const [topAlunos, setTopAlunos] = useState<any>(null);
-  const [contacaoPorSerie, setContacaoPorSerie] = useState<any>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [students, booksCount, loans, activeLoans, storys] = await Promise.all([
+        const [students, booksCount, loans, activeLoans] = await Promise.all([
           getStudents(),
           getBooksCount(),
           getLoans(),
           getActiveLoans(),
-          getStorytellings(),
         ]);
 
         setStats({
@@ -117,23 +114,6 @@ export default function Dashboard() {
               label: 'Top 15 Alunos',
               data: sortedAlunos.map(([, count]) => count),
               backgroundColor: 'rgba(153, 102, 255, 0.6)',
-            },
-          ],
-        });
-
-        // Gráfico de Contação de Histórias por Série
-        const serieCountStorys: Record<string, number> = {};
-        storys.forEach((s: any) => {
-          const serie = s.serie || 'N/A';
-          serieCountStorys[serie] = (serieCountStorys[serie] || 0) + 1;
-        });
-        setContacaoPorSerie({
-          labels: Object.keys(serieCountStorys),
-          datasets: [
-            {
-              label: 'Contação de Histórias por Série',
-              data: Object.values(serieCountStorys),
-              backgroundColor: 'rgba(255, 99, 132, 0.6)',
             },
           ],
         });
@@ -354,15 +334,6 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </div>
-
-        <div className="mt-8">
-          <h2 className="text-xl font-bold mb-2">Contação de Histórias por Série</h2>
-          {contacaoPorSerie && (
-            <div style={{ height: 300 }}>
-              <Bar data={contacaoPorSerie} options={{ maintainAspectRatio: false }} />
-            </div>
-          )}
         </div>
       </div>
     </DashboardLayout>

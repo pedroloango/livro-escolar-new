@@ -66,13 +66,13 @@ export default function StorytellingPage() {
             <tbody>
               {storytellings.map((s) => (
                 <tr key={s.id}>
-                  <td>{s.professor_nome || '-'}</td>
+                  <td>{s.professor_id}</td>
                   <td>{s.serie}</td>
                   <td>{s.turma}</td>
                   <td>{s.turno}</td>
-                  <td>{s.livro_titulo || '-'}</td>
+                  <td>{s.livro_id}</td>
                   <td>{s.data_contacao}</td>
-                  <td>{s.profissional_nome || '-'}</td>
+                  <td>{s.profissional_id}</td>
                   <td>{s.qtd_alunos}</td>
                   <td>
                     <Button size="sm" variant="destructive" onClick={() => handleDelete(s.id!)} disabled={loading}>Excluir</Button>
