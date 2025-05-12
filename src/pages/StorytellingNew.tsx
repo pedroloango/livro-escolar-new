@@ -49,6 +49,13 @@ export default function StorytellingNew() {
       const book = await findBookByBarcode(barcode);
       if (book && book.id) {
         setForm(f => ({ ...f, livro_id: book.id }));
+        // Garante que o livro está na lista de books
+        setBooks(prev => {
+          if (!prev.find(b => b.id === book.id)) {
+            return [book, ...prev];
+          }
+          return prev;
+        });
         toast.success(`Livro selecionado: ${book.titulo}`);
       } else {
         toast.error('Livro não encontrado com este código de barras');
