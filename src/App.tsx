@@ -23,6 +23,7 @@ import NotFound from "./pages/NotFound";
 import TeachersPage from "./pages/Teachers";
 import StorytellingPage from "./pages/Storytelling";
 import StorytellingNew from "./pages/StorytellingNew";
+import Login from "./pages/Login";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <Routes>
+          <Route path="/login" element={<Login />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/students" element={<Students />} />

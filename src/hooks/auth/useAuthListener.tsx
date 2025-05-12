@@ -5,9 +5,11 @@ import { getSchools } from '@/services/userService';
 import { AuthState } from '@/types/auth';
 import { UserWithProfile } from '@/types';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 export function useAuthListener(authState: AuthState) {
   const { setUser, setIsAdmin, setCurrentSchool, setLoading } = authState;
+  const navigate = useNavigate();
 
   useEffect(() => {
     let isMounted = true;
@@ -105,13 +107,18 @@ export function useAuthListener(authState: AuthState) {
             setLoading(false);
           }
         }
-      } else if (event === 'SIGNED_OUT') {
-        console.log("Usuário desconectado");
+      } else if (event === 'SIGNED_OUT' || event === 'PASSWORD_RECOVERY') {
+        console.log("Usuário desconectado ou sessão expirada");
         if (isMounted) {
           setUser(null);
           setIsAdmin(false);
           setCurrentSchool(null);
           setLoading(false);
+          // Exibe mensagem amigável e redireciona para login
+          window.localStorage.removeItem('supabase.auth.token');
+          window.sessionStorage.removeItem('supabase.auth.token');
+          alert('Sua sessão expirou ou você foi desconectado. Faça login novamente.');
+          navigate('/login');
         }
       }
     });
@@ -120,5 +127,5 @@ export function useAuthListener(authState: AuthState) {
       isMounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, [setUser, setIsAdmin, setCurrentSchool, setLoading]);
+  }, [setUser, setIsAdmin, setCurrentSchool, setLoading, navigate]);
 }
