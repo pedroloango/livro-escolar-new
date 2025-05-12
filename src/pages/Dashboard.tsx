@@ -36,8 +36,7 @@ export default function Dashboard() {
     activeLoans: 0,
     totalLoans: 0,
   });
-  const [loading, setLoading] = useState(true);
-  const { isAdmin } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
 
   // Novos estados para os gráficos
   const [emprestimosPorSerie, setEmprestimosPorSerie] = useState<any>(null);
@@ -119,26 +118,26 @@ export default function Dashboard() {
         });
       } catch (error) {
         console.error('Failed to fetch stats:', error);
-      } finally {
-        setLoading(false);
       }
     };
 
-    fetchStats();
-  }, []);
+    if (!authLoading && isAuthenticated) {
+      fetchStats();
+    }
+  }, [authLoading, isAuthenticated]);
 
   return (
     <DashboardLayout>
       <div className="space-y-4">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
-          {isAdmin 
-            ? 'Bem-vindo Administrador ao Sistema de Controle de Empréstimos de Livros!'
+          {isAuthenticated 
+            ? 'Bem-vindo Usuário ao Sistema de Controle de Empréstimos de Livros!'
             : 'Bem-vindo Usuário ao Sistema de Controle de Empréstimos de Livros!'
           }
         </p>
 
-        {loading ? (
+        {authLoading ? (
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {[1, 2, 3, 4].map(i => (
               <Card key={i} className="animate-pulse">

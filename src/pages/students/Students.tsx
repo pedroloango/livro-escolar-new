@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -30,8 +29,10 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import StudentsImport from '@/components/students/StudentsImport';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Students() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [serieFilter, setSerieFilter] = useState<string>('all');
@@ -42,8 +43,10 @@ export default function Students() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    if (!authLoading && isAuthenticated) {
+      fetchStudents();
+    }
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
     // Apply filters when students, name filter, serie filter, or turno filter changes

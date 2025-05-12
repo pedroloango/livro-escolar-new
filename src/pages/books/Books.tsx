@@ -31,8 +31,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Books() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [books, setBooks] = useState<Book[]>([]);
   const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,9 +48,11 @@ export default function Books() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchBooks();
-    fetchBooksCount();
-  }, []);
+    if (!authLoading && isAuthenticated) {
+      fetchBooks();
+      fetchBooksCount();
+    }
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
     // Aplicar filtro por título

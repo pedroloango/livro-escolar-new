@@ -1,5 +1,6 @@
 import { User, Profile, School, UserWithProfile, SchoolRecord } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
+import { ADMIN_CREDENTIALS } from '@/hooks/auth/constants';
 
 // Função para obter o usuário atual
 export const getCurrentUser = async (): Promise<User | null> => {
@@ -30,9 +31,8 @@ export const getCurrentUser = async (): Promise<User | null> => {
 export async function getCurrentUserWithSchool(): Promise<UserWithProfile | null> {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
     if (authError || !user) {
-      console.error('Erro ao obter usuário autenticado:', authError);
+      // Não lance erro, apenas retorne null
       return null;
     }
 
