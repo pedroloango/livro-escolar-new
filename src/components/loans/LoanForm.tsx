@@ -142,6 +142,13 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       const book = await findBookByBarcode(barcode);
       if (book && book.id) {
         setValue('livro_id', book.id, { shouldValidate: true });
+        setBookSearch('');
+        setFilteredBooks((prev) => {
+          if (!prev.find(b => b.id === book.id)) {
+            return [book, ...prev];
+          }
+          return prev;
+        });
         toast.success(`Livro selecionado: ${book.titulo}`);
       } else {
         toast.error('Livro não encontrado com este código de barras');
