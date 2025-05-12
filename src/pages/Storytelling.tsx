@@ -5,10 +5,14 @@ import { getStorytellings, deleteStorytelling, Storytelling } from '@/services/s
 import { useNavigate } from 'react-router-dom';
 import { Table } from '@/components/ui/table';
 import { toast } from 'sonner';
+import { getTeachers } from '@/services/teacherService';
+import { getBooks } from '@/services/bookService';
 
 export default function StorytellingPage() {
   const [storytellings, setStorytellings] = useState<Storytelling[]>([]);
   const [loading, setLoading] = useState(false);
+  const [teacherMap, setTeacherMap] = useState<Record<string, string>>({});
+  const [bookMap, setBookMap] = useState<Record<string, string>>({});
   const navigate = useNavigate();
 
   async function fetchStorytellings() {
@@ -24,7 +28,23 @@ export default function StorytellingPage() {
   }
 
   useEffect(() => {
-    fetchStorytellings();
+    async function fetchAll() {
+      setLoading(true);
+      try {
+        const [teachers, books] = await Promise.all([
+          getTeachers(),
+          getBooks()
+        ]);
+        setTeacherMap(Object.fromEntries(teachers.map(t => [t.id, t.nome])));
+        setBookMap(Object.fromEntries(books.map(b => [b.id, b.titulo])));
+        await fetchStorytellings();
+      } catch (e) {
+        toast.error('Erro ao carregar dados auxiliares');
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchAll();
   }, []);
 
   async function handleDelete(id: string) {
@@ -66,13 +86,13 @@ export default function StorytellingPage() {
             <tbody>
               {storytellings.map((s) => (
                 <tr key={s.id}>
-                  <td>{s.professor_id}</td>
+                  <td>{teacherMap[s.professor_id] || s.professor_id}</td>
                   <td>{s.serie}</td>
                   <td>{s.turma}</td>
                   <td>{s.turno}</td>
-                  <td>{s.livro_id}</td>
+                  <td>{bookMap[s.livro_id] || s.livro_id}</td>
                   <td>{s.data_contacao}</td>
-                  <td>{s.profissional_id}</td>
+                  <td>{teacherMap[s.profissional_id] || s.profissional_id}</td>
                   <td>{s.qtd_alunos}</td>
                   <td>
                     <Button size="sm" variant="destructive" onClick={() => handleDelete(s.id!)} disabled={loading}>Excluir</Button>

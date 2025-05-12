@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import BarcodeScanner from '@/components/common/BarcodeScanner';
 import { Barcode } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 export default function StorytellingNew() {
   const [teachers, setTeachers] = useState<any[]>([]);
@@ -120,12 +121,20 @@ export default function StorytellingNew() {
           <div>
             <label className="block mb-1 font-medium">Título do Livro</label>
             <div className="flex gap-2 items-center">
-              <select name="livro_id" value={form.livro_id || ''} onChange={handleChange} required className="border rounded px-2 py-1 w-full">
-                <option value="">Selecione o livro</option>
-                {books.map(b => (
-                  <option key={b.id} value={b.id}>{b.titulo}</option>
-                ))}
-              </select>
+              <Select
+                value={form.livro_id || ''}
+                onValueChange={value => setForm(f => ({ ...f, livro_id: value }))}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o livro ou use o leitor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {books.map(b => (
+                    <SelectItem key={b.id} value={b.id}>{b.titulo}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}>
                 <Barcode className="h-5 w-5" />
               </Button>
