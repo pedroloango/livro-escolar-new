@@ -53,9 +53,8 @@ export function useAuthListener(authState: AuthState) {
                   id: session.user.id,
                   email: session.user.email,
                   role: 'admin',
-                  is_confirmed: true,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
+                  status: 'Ativo',
+                  created_at: new Date().toISOString()
                 });
               
               if (createError) {

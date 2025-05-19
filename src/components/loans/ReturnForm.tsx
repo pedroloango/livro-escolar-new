@@ -33,6 +33,8 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [maxDevolvida, setMaxDevolvida] = useState<number>(1);
+  const [filteredLoans, setFilteredLoans] = useState<Loan[]>([]);
+  const [scannedBookId, setScannedBookId] = useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm({
     defaultValues: {
@@ -50,6 +52,7 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
       try {
         const loans = await getActiveLoans();
         setActiveLoans(loans);
+        setFilteredLoans(loans);
         
         if (initialLoanId) {
           setValue('loanId', initialLoanId);
@@ -88,15 +91,6 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
     }
   }, [watchLoanId, activeLoans, setValue]);
 
-  const onFormSubmit = (data: { loanId: string, data_devolucao: string, quantidade_devolvida: number }) => {
-    if (!selectedLoan) return;
-    
-    onSubmit(data.loanId, {
-      data_devolucao: data.data_devolucao,
-      quantidade_devolvida: data.quantidade_devolvida
-    });
-  };
-
   const handleBarcodeScan = async (barcode: string) => {
     try {
       const book = await findBookByBarcode(barcode);
@@ -108,6 +102,9 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
           toast.error('Nenhum empréstimo ativo encontrado para este livro');
           return;
         }
+        
+        setScannedBookId(book.id);
+        setFilteredLoans(loansOfThisBook);
         
         if (loansOfThisBook.length === 1) {
           setValue('loanId', loansOfThisBook[0].id || '');
@@ -123,6 +120,15 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
       console.error('Error finding loan by book barcode:', error);
       toast.error('Erro ao buscar empréstimo por código de barras');
     }
+  };
+
+  const onFormSubmit = (data: { loanId: string, data_devolucao: string, quantidade_devolvida: number }) => {
+    if (!selectedLoan) return;
+    
+    onSubmit(data.loanId, {
+      data_devolucao: data.data_devolucao,
+      quantidade_devolvida: data.quantidade_devolvida
+    });
   };
 
   const calcularPendentes = () => {
@@ -167,7 +173,7 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
                     <SelectValue placeholder="Selecione um empréstimo ativo" />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeLoans.map((loan) => (
+                    {filteredLoans.map((loan) => (
                       <SelectItem key={loan.id} value={loan.id || ''}>
                         {loan.aluno?.nome} - {loan.livro?.titulo} ({format(parseISO(loan.data_retirada), 'dd/MM/yyyy')})
                         {loan.status === 'Pendente' ? ` ⚠️ Pendente (${loan.quantidade_retirada - (loan.quantidade_devolvida || 0)} restantes)` : ''}
@@ -180,7 +186,11 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
                 type="button" 
                 variant="outline" 
                 size="icon" 
-                onClick={() => setIsScannerOpen(true)}
+                onClick={() => {
+                  setIsScannerOpen(true);
+                  setScannedBookId(null);
+                  setFilteredLoans(activeLoans);
+                }}
               >
                 <Barcode className="h-5 w-5" />
               </Button>

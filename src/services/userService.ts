@@ -372,6 +372,11 @@ export const createUser = async (
   escolaId?: string
 ): Promise<User> => {
   try {
+    // Validate role
+    if (!role || (role !== 'user' && role !== 'admin')) {
+      throw new Error('Invalid role. Must be either "user" or "admin"');
+    }
+
     // Criar o usuário na autenticação
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -401,9 +406,8 @@ export const createUser = async (
         email: email,
         role: role,
         escola_id: escolaId || null,
-        is_confirmed: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        status: 'Ativo',
+        created_at: new Date().toISOString()
       });
 
     if (profileError) {

@@ -461,7 +461,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                     </SelectTrigger>
                     <SelectContent>
                       {filteredBooks.map((book) => (
-                        <SelectItem key={book.id} value={book.id || ''}>
+                        <SelectItem key={book.id} value={book.id || undefined}>
                           <div className="flex flex-col">
                             <span className="font-medium">{book.titulo}</span>
                             {book.autor && <span className="text-sm text-muted-foreground">Autor: {book.autor}</span>}

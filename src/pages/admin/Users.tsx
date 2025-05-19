@@ -106,7 +106,7 @@ export default function Users() {
 
     try {
       setIsCreating(true);
-      await createUser(email, password, role, selectedSchoolId || undefined);
+      await createUser(email, password, role, selectedSchoolId === 'none' ? undefined : selectedSchoolId);
       toast.success('Usuário criado com sucesso');
       setIsCreateDialogOpen(false);
       refetchUsers();
@@ -114,7 +114,7 @@ export default function Users() {
       setEmail('');
       setPassword('');
       setRole('user');
-      setSelectedSchoolId('');
+      setSelectedSchoolId('none');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Erro ao criar usuário');
     } finally {
@@ -284,7 +284,7 @@ export default function Users() {
                         <SelectValue placeholder="Selecione uma escola" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Nenhuma</SelectItem>
+                        <SelectItem value="none">Nenhuma</SelectItem>
                         {schools.map((school) => (
                           <SelectItem key={school.id} value={school.id}>
                             {school.nome}
