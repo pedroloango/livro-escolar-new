@@ -20,6 +20,8 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+import { Pagination } from '@/components/ui/pagination';
+import { LoadingSkeleton } from '@/components/ui/loading-skeleton';
 
 interface LoansProps {
   returnMode?: boolean;
@@ -41,39 +43,59 @@ export default function Loans({
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const itemsPerPage = 50;
 
   useEffect(() => {
     fetchLoans();
-  }, []);
+  }, [currentPage]);
 
   useEffect(() => {
-    let result = [...loans];
-    
-    if (studentFilter) {
-      result = result.filter(loan => 
-        loan.aluno?.nome.toLowerCase().includes(studentFilter.toLowerCase())
-      );
+    // Reset to first page when filters change
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    } else {
+      fetchLoans();
     }
-    
-    if (bookFilter) {
-      result = result.filter(loan => 
-        loan.livro?.titulo.toLowerCase().includes(bookFilter.toLowerCase())
-      );
-    }
-    
-    if (statusFilter && statusFilter !== 'all') {
-      result = result.filter(loan => loan.status === statusFilter);
-    }
-    
-    setFilteredLoans(result);
-  }, [loans, studentFilter, bookFilter, statusFilter]);
+  }, [studentFilter, bookFilter, statusFilter]);
 
   const fetchLoans = async () => {
     try {
       setLoading(true);
-      const data = await getLoans();
+      const offset = (currentPage - 1) * itemsPerPage;
+      const data = await getLoans(itemsPerPage, offset);
+      
+      // For now, we'll implement client-side filtering
+      // In a real app, you'd want server-side filtering
+      let filteredData = data;
+      
+      if (studentFilter) {
+        filteredData = filteredData.filter(loan => 
+          loan.aluno?.nome.toLowerCase().includes(studentFilter.toLowerCase())
+        );
+      }
+      
+      if (bookFilter) {
+        filteredData = filteredData.filter(loan => 
+          loan.livro?.titulo.toLowerCase().includes(bookFilter.toLowerCase())
+        );
+      }
+      
+      if (statusFilter && statusFilter !== 'all') {
+        filteredData = filteredData.filter(loan => loan.status === statusFilter);
+      }
+      
       setLoans(data);
-      setFilteredLoans(data);
+      setFilteredLoans(filteredData);
+      
+      // For now, we'll estimate total pages based on current data
+      // In a real app, you'd get this from the server
+      setTotalPages(Math.ceil(data.length / itemsPerPage));
+      setTotalCount(data.length);
     } catch (error) {
       console.error('Failed to fetch loans:', error);
       toast.error('Erro ao carregar empréstimos');
@@ -216,9 +238,7 @@ export default function Loans({
           </div>
 
           {loading ? (
-            <div className="h-96 flex items-center justify-center">
-              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
-            </div>
+            <LoadingSkeleton type="table" />
           ) : (
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -265,6 +285,19 @@ export default function Loans({
                 columns={columns}
                 data={filteredLoans}
               />
+              
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, totalCount)} de {totalCount} empréstimos
+                  </div>
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -292,9 +325,7 @@ export default function Loans({
   return (
     <div className="space-y-4">
       {loading ? (
-        <div className="h-96 flex items-center justify-center">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
-        </div>
+        <LoadingSkeleton type="table" />
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -341,6 +372,19 @@ export default function Loans({
             columns={columns}
             data={filteredLoans}
           />
+          
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, totalCount)} de {totalCount} empréstimos
+              </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

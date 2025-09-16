@@ -20,7 +20,10 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
   const { register, handleSubmit, formState: { errors }, setValue } = useForm<Book>({
     defaultValues: initialData || {
       titulo: '',
-      codigo_barras: ''
+      codigo_barras: '',
+      quantidade_total: 1,
+      quantidade_disponivel: 1,
+      quantidade_emprestada: 0
     }
   });
 
@@ -69,6 +72,69 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
             {errors.codigo_barras && (
               <p className="text-red-500 text-sm">{errors.codigo_barras.message}</p>
             )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="quantidade_total">Quantidade Total</Label>
+              <Input
+                id="quantidade_total"
+                type="number"
+                min="1"
+                placeholder="Ex: 5"
+                {...register('quantidade_total', { 
+                  required: 'Quantidade total é obrigatória',
+                  min: { value: 1, message: 'Quantidade deve ser pelo menos 1' }
+                })}
+                className={errors.quantidade_total ? 'border-red-500' : ''}
+              />
+              {errors.quantidade_total && (
+                <p className="text-red-500 text-sm">{errors.quantidade_total.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quantidade_disponivel">Quantidade Disponível</Label>
+              <Input
+                id="quantidade_disponivel"
+                type="number"
+                min="0"
+                placeholder="Ex: 5"
+                {...register('quantidade_disponivel', { 
+                  required: 'Quantidade disponível é obrigatória',
+                  min: { value: 0, message: 'Quantidade não pode ser negativa' }
+                })}
+                className={errors.quantidade_disponivel ? 'border-red-500' : ''}
+              />
+              {errors.quantidade_disponivel && (
+                <p className="text-red-500 text-sm">{errors.quantidade_disponivel.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quantidade_emprestada">Quantidade Emprestada</Label>
+              <Input
+                id="quantidade_emprestada"
+                type="number"
+                min="0"
+                placeholder="Ex: 0"
+                {...register('quantidade_emprestada', { 
+                  required: 'Quantidade emprestada é obrigatória',
+                  min: { value: 0, message: 'Quantidade não pode ser negativa' }
+                })}
+                className={errors.quantidade_emprestada ? 'border-red-500' : ''}
+              />
+              {errors.quantidade_emprestada && (
+                <p className="text-red-500 text-sm">{errors.quantidade_emprestada.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Dica:</strong> A quantidade disponível deve ser igual à quantidade total menos a quantidade emprestada.
+              O sistema ajustará automaticamente quando você fizer empréstimos e devoluções.
+            </p>
           </div>
         </CardContent>
 

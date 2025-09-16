@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Barcode } from 'lucide-react';
-import { getBooks, deleteBook, findBookByBarcode, getBooksCount } from '@/services/bookService';
+import { Plus, Pencil, Trash2, Barcode, Package, AlertTriangle, RefreshCw } from 'lucide-react';
+import { getBooks, deleteBook, findBookByBarcode, getBooksCount, getStockSummary, syncBooksStockWithLoans } from '@/services/bookService';
 import { lookupBookByIsbn } from '@/services/bookLookupService';
 import { Book } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 export default function Books() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -45,12 +47,20 @@ export default function Books() {
   const [isLookupDialogOpen, setIsLookupDialogOpen] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [totalBooks, setTotalBooks] = useState<number>(0);
+  const [stockSummary, setStockSummary] = useState<{
+    totalBooks: number;
+    totalStock: number;
+    totalAvailable: number;
+    totalLoaned: number;
+    lowStockBooks: number;
+  } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
       fetchBooks();
       fetchBooksCount();
+      fetchStockSummary();
     }
   }, [authLoading, isAuthenticated]);
 
@@ -88,6 +98,33 @@ export default function Books() {
       console.error('Failed to fetch books count:', error);
     }
   };
+
+  const fetchStockSummary = async () => {
+    try {
+      const summary = await getStockSummary();
+      setStockSummary(summary);
+    } catch (error) {
+      console.error('Failed to fetch stock summary:', error);
+    }
+  };
+
+
+  const handleSyncStock = async () => {
+    try {
+      await syncBooksStockWithLoans();
+      toast.success('Estoque atualizado com sucesso!');
+      // Recarregar dados após sincronização
+      await fetchBooks();
+      await fetchStockSummary();
+    } catch (error) {
+      console.error('Failed to sync stock:', error);
+      toast.error('Erro ao atualizar estoque. Os dados serão calculados automaticamente.');
+      // Recarregar dados mesmo assim
+      await fetchBooks();
+      await fetchStockSummary();
+    }
+  };
+
 
   const handleDelete = async (id: string) => {
     try {
@@ -161,7 +198,50 @@ export default function Books() {
       header: 'Código de Barras',
     },
     {
+      accessorKey: 'quantidade_total',
+      header: 'Total',
+      cell: ({ row }) => {
+        const book = row.original;
+        return (
+          <div className="text-center">
+            <span className="font-medium">{book.quantidade_total || 0}</span>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'quantidade_disponivel',
+      header: 'Disponível',
+      cell: ({ row }) => {
+        const book = row.original;
+        const isLowStock = (book.quantidade_disponivel || 0) <= 5;
+        return (
+          <div className="text-center">
+            <Badge 
+              variant={isLowStock ? "destructive" : "default"}
+              className={isLowStock ? "bg-red-100 text-red-800" : ""}
+            >
+              {book.quantidade_disponivel || 0}
+            </Badge>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'quantidade_emprestada',
+      header: 'Emprestado',
+      cell: ({ row }) => {
+        const book = row.original;
+        return (
+          <div className="text-center">
+            <span className="font-medium">{book.quantidade_emprestada || 0}</span>
+          </div>
+        );
+      },
+    },
+    {
       id: 'actions',
+      header: 'Ações',
       cell: ({ row }) => {
         const book = row.original;
         return (
@@ -205,9 +285,19 @@ export default function Books() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold tracking-tight">Livros</h1>
-          <Button onClick={() => navigate('/books/new')}>
-            <Plus className="mr-2 h-4 w-4" /> Novo Livro
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleSyncStock}
+              className="text-sm"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Atualizar Estoque
+            </Button>
+            <Button onClick={() => navigate('/books/new')}>
+              <Plus className="mr-2 h-4 w-4" /> Novo Livro
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -216,6 +306,66 @@ export default function Books() {
           </div>
         ) : (
           <>
+            {/* Cards de Resumo do Estoque */}
+            {stockSummary && (
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium">Total de Livros</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stockSummary.totalBooks}</div>
+                    <p className="text-xs text-muted-foreground">Títulos únicos</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium">Estoque Total</CardTitle>
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stockSummary.totalStock}</div>
+                    <p className="text-xs text-muted-foreground">Exemplares</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium">Disponível</CardTitle>
+                    <Package className="h-4 w-4 text-green-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">{stockSummary.totalAvailable}</div>
+                    <p className="text-xs text-muted-foreground">Para empréstimo</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium">Emprestado</CardTitle>
+                    <Package className="h-4 w-4 text-blue-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-600">{stockSummary.totalLoaned}</div>
+                    <p className="text-xs text-muted-foreground">Em circulação</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium">Estoque Baixo</CardTitle>
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-red-600">{stockSummary.lowStockBooks}</div>
+                    <p className="text-xs text-muted-foreground">≤ 5 exemplares</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             <div className="flex flex-col md:flex-row gap-4 items-end">
               <div className="flex-1">
                 <Input

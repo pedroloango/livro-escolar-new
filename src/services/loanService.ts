@@ -1,8 +1,9 @@
 import { Loan, Student, Book } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
+import { updateBookStock } from '@/services/bookService';
 
-// Helper function to populate loan with student and book data
+// Helper function to populate loan with student and book data using JOIN
 async function populateLoan(loan: Loan): Promise<Loan> {
   // Buscar aluno
   const { data: studentData } = await supabase
@@ -25,33 +26,47 @@ async function populateLoan(loan: Loan): Promise<Loan> {
   };
 }
 
-export const getLoans = async (): Promise<Loan[]> => {
+// Optimized function to get loans with JOINs to avoid N+1 queries
+async function getLoansWithJoins(escolaId?: string, limit?: number, offset?: number): Promise<Loan[]> {
+  let query = supabase
+    .from('emprestimos')
+    .select(`
+      *,
+      aluno:alunos(*),
+      livro:livros(*)
+    `)
+    .order('data_retirada', { ascending: false });
+  
+  if (escolaId) {
+    query = query.eq('escola_id', escolaId);
+  }
+  
+  if (limit) {
+    query = query.limit(limit);
+  }
+  
+  if (offset) {
+    query = query.range(offset, offset + (limit || 50) - 1);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    console.error('Erro ao buscar empréstimos com JOINs:', error);
+    throw error;
+  }
+  
+  return data || [];
+}
+
+export const getLoans = async (limit?: number, offset?: number): Promise<Loan[]> => {
   try {
     // Obter o usuário atual para filtrar por escola_id
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
     
-    // Create a query
-    let query = supabase.from('emprestimos').select('*');
-    
-    // Se o usuário tem uma escola associada, filtrar por essa escola
-    if (escolaId) {
-      query = query.eq('escola_id', escolaId);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-      console.error('Erro ao buscar empréstimos:', error);
-      throw error;
-    }
-    
-    // Return all loans with populated student and book data
-    const populatedLoans = await Promise.all(
-      (data || []).map(loan => populateLoan(loan as Loan))
-    );
-    
-    return populatedLoans;
+    // Use optimized function with JOINs
+    return await getLoansWithJoins(escolaId, limit, offset);
   } catch (error) {
     console.error('Erro ao obter empréstimos:', error);
     throw error;
@@ -64,9 +79,15 @@ export const getActiveLoans = async (): Promise<Loan[]> => {
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
     
-    let query = supabase.from('emprestimos')
-      .select('*')
-      .in('status', ['Emprestado', 'Pendente']);
+    let query = supabase
+      .from('emprestimos')
+      .select(`
+        *,
+        aluno:alunos(*),
+        livro:livros(*)
+      `)
+      .in('status', ['Emprestado', 'Pendente'])
+      .order('data_retirada', { ascending: false });
     
     // Se o usuário tem uma escola associada, filtrar por essa escola
     if (escolaId) {
@@ -80,12 +101,7 @@ export const getActiveLoans = async (): Promise<Loan[]> => {
       throw error;
     }
     
-    // Return active loans with populated student and book data
-    const populatedLoans = await Promise.all(
-      (data || []).map(loan => populateLoan(loan as Loan))
-    );
-    
-    return populatedLoans;
+    return data || [];
   } catch (error) {
     console.error('Erro ao buscar empréstimos ativos:', error);
     throw error;
@@ -196,6 +212,16 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
       throw error;
     }
     
+    // Atualizar estoque do livro
+    try {
+      await updateBookStock(loan.livro_id, 'emprestar', loanData.quantidade_retirada);
+    } catch (stockError) {
+      console.error('Erro ao atualizar estoque:', stockError);
+      // Se falhar ao atualizar estoque, reverter o empréstimo
+      await supabase.from('emprestimos').delete().eq('id', data.id);
+      throw stockError;
+    }
+    
     return populateLoan(data as Loan);
   } catch (error) {
     console.error('Erro ao criar empréstimo:', error);
@@ -285,10 +311,40 @@ export const returnLoan = async (id: string, returnData: { data_devolucao: strin
     throw error;
   }
   
+  // Atualizar estoque do livro
+  try {
+    await updateBookStock(currentLoan.livro_id, 'devolver', novaQuantidadeDevolvida);
+  } catch (stockError) {
+    console.error('Erro ao atualizar estoque na devolução:', stockError);
+    // Se falhar ao atualizar estoque, reverter a devolução
+    await supabase
+      .from('emprestimos')
+      .update({
+        data_devolucao: null,
+        quantidade_devolvida: currentLoan.quantidade_devolvida || 0,
+        status: currentLoan.status
+      })
+      .eq('id', id);
+    throw stockError;
+  }
+  
   return populateLoan(updatedData as Loan);
 };
 
 export const deleteLoan = async (id: string): Promise<void> => {
+  // Primeiro, buscar o empréstimo para obter informações do livro
+  const { data: loan, error: fetchError } = await supabase
+    .from('emprestimos')
+    .select('*')
+    .eq('id', id)
+    .single();
+  
+  if (fetchError) {
+    console.error('Erro ao buscar empréstimo para exclusão:', fetchError);
+    throw fetchError;
+  }
+  
+  // Deletar o empréstimo
   const { error } = await supabase
     .from('emprestimos')
     .delete()
@@ -297,6 +353,19 @@ export const deleteLoan = async (id: string): Promise<void> => {
   if (error) {
     console.error('Erro ao deletar empréstimo:', error);
     throw error;
+  }
+  
+  // Reverter o estoque do livro se o empréstimo estava ativo
+  if (loan && (loan.status === 'Emprestado' || loan.status === 'Pendente')) {
+    try {
+      const quantidadeParaReverter = loan.quantidade_retirada - (loan.quantidade_devolvida || 0);
+      if (quantidadeParaReverter > 0) {
+        await updateBookStock(loan.livro_id, 'devolver', quantidadeParaReverter);
+      }
+    } catch (stockError) {
+      console.error('Erro ao reverter estoque na exclusão:', stockError);
+      // Não falhar a exclusão por causa do estoque, apenas logar o erro
+    }
   }
 };
 
@@ -321,7 +390,11 @@ export const getLoansByStudent = async (studentId: string): Promise<Loan[]> => {
 export const getLoansByBook = async (bookId: string): Promise<Loan[]> => {
   const { data, error } = await supabase
     .from('emprestimos')
-    .select('*')
+    .select(`
+      *,
+      aluno:alunos(*),
+      livro:livros(*)
+    `)
     .eq('livro_id', bookId);
   
   if (error) {
@@ -329,9 +402,113 @@ export const getLoansByBook = async (bookId: string): Promise<Loan[]> => {
     throw error;
   }
   
-  const populatedLoans = await Promise.all(
-    (data || []).map(loan => populateLoan(loan as Loan))
-  );
-  
-  return populatedLoans;
+  return data || [];
+};
+
+// Optimized function to get dashboard statistics
+export const getDashboardStats = async (): Promise<{
+  totalStudents: number;
+  totalBooks: number;
+  activeLoans: number;
+  totalLoans: number;
+  emprestimosPorSerie: Record<string, number>;
+  emprestimosPorStatus: Record<string, number>;
+  topAlunos: Array<{ nome: string; count: number }>;
+}> => {
+  try {
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    
+    // Get all loans with student and book data in one query
+    let loansQuery = supabase
+      .from('emprestimos')
+      .select(`
+        *,
+        aluno:alunos(*),
+        livro:livros(*)
+      `);
+    
+    if (escolaId) {
+      loansQuery = loansQuery.eq('escola_id', escolaId);
+    }
+    
+    const { data: loans, error: loansError } = await loansQuery;
+    
+    if (loansError) {
+      console.error('Erro ao buscar empréstimos para estatísticas:', loansError);
+      throw loansError;
+    }
+    
+    // Get students count
+    let studentsQuery = supabase.from('alunos').select('*', { count: 'exact', head: true });
+    if (escolaId) {
+      studentsQuery = studentsQuery.eq('escola_id', escolaId);
+    }
+    const { count: totalStudents, error: studentsError } = await studentsQuery;
+    
+    if (studentsError) {
+      console.error('Erro ao contar alunos:', studentsError);
+      throw studentsError;
+    }
+    
+    // Get books count
+    let booksQuery = supabase.from('livros').select('*', { count: 'exact', head: true });
+    if (escolaId) {
+      booksQuery = booksQuery.eq('escola_id', escolaId);
+    }
+    const { count: totalBooks, error: booksError } = await booksQuery;
+    
+    if (booksError) {
+      console.error('Erro ao contar livros:', booksError);
+      throw booksError;
+    }
+    
+    const loansData = loans || [];
+    
+    // Calculate statistics
+    const activeLoans = loansData.filter(loan => 
+      loan.status === 'Emprestado' || loan.status === 'Pendente'
+    ).length;
+    
+    const totalLoans = loansData.length;
+    
+    // Empréstimos por série
+    const emprestimosPorSerie: Record<string, number> = {};
+    loansData.forEach((loan: any) => {
+      const serie = loan.serie || 'N/A';
+      emprestimosPorSerie[serie] = (emprestimosPorSerie[serie] || 0) + 1;
+    });
+    
+    // Empréstimos por status
+    const emprestimosPorStatus: Record<string, number> = {};
+    loansData.forEach((loan: any) => {
+      const status = loan.status || 'N/A';
+      emprestimosPorStatus[status] = (emprestimosPorStatus[status] || 0) + 1;
+    });
+    
+    // Top alunos
+    const alunoCount: Record<string, number> = {};
+    loansData.forEach((loan: any) => {
+      const nome = loan.aluno?.nome || 'N/A';
+      alunoCount[nome] = (alunoCount[nome] || 0) + 1;
+    });
+    
+    const topAlunos = Object.entries(alunoCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([nome, count]) => ({ nome, count }));
+    
+    return {
+      totalStudents: totalStudents || 0,
+      totalBooks: totalBooks || 0,
+      activeLoans,
+      totalLoans,
+      emprestimosPorSerie,
+      emprestimosPorStatus,
+      topAlunos
+    };
+  } catch (error) {
+    console.error('Erro ao obter estatísticas do dashboard:', error);
+    throw error;
+  }
 };

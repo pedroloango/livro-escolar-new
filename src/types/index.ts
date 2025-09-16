@@ -16,6 +16,9 @@ export interface Book {
   autor?: string;
   editora?: string;
   escola_id?: string;
+  quantidade_total: number;
+  quantidade_disponivel: number;
+  quantidade_emprestada: number;
 }
 
 export interface Loan {
