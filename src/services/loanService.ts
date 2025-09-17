@@ -212,15 +212,9 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
       throw error;
     }
     
-    // Atualizar estoque do livro
-    try {
-      await updateBookStock(loan.livro_id, 'emprestar', loanData.quantidade_retirada);
-    } catch (stockError) {
-      console.error('Erro ao atualizar estoque:', stockError);
-      // Se falhar ao atualizar estoque, reverter o empréstimo
-      await supabase.from('emprestimos').delete().eq('id', data.id);
-      throw stockError;
-    }
+    // Nota: Não atualizamos o estoque na tabela livros pois os campos não existem
+    // O estoque é calculado em tempo real baseado nos empréstimos
+    console.log('Empréstimo criado com sucesso. Estoque será recalculado automaticamente.');
     
     return populateLoan(data as Loan);
   } catch (error) {
@@ -311,22 +305,9 @@ export const returnLoan = async (id: string, returnData: { data_devolucao: strin
     throw error;
   }
   
-  // Atualizar estoque do livro
-  try {
-    await updateBookStock(currentLoan.livro_id, 'devolver', novaQuantidadeDevolvida);
-  } catch (stockError) {
-    console.error('Erro ao atualizar estoque na devolução:', stockError);
-    // Se falhar ao atualizar estoque, reverter a devolução
-    await supabase
-      .from('emprestimos')
-      .update({
-        data_devolucao: null,
-        quantidade_devolvida: currentLoan.quantidade_devolvida || 0,
-        status: currentLoan.status
-      })
-      .eq('id', id);
-    throw stockError;
-  }
+  // Nota: Não atualizamos o estoque na tabela livros pois os campos não existem
+  // O estoque é calculado em tempo real baseado nos empréstimos
+  console.log('Devolução registrada com sucesso. Estoque será recalculado automaticamente.');
   
   return populateLoan(updatedData as Loan);
 };
@@ -355,18 +336,9 @@ export const deleteLoan = async (id: string): Promise<void> => {
     throw error;
   }
   
-  // Reverter o estoque do livro se o empréstimo estava ativo
-  if (loan && (loan.status === 'Emprestado' || loan.status === 'Pendente')) {
-    try {
-      const quantidadeParaReverter = loan.quantidade_retirada - (loan.quantidade_devolvida || 0);
-      if (quantidadeParaReverter > 0) {
-        await updateBookStock(loan.livro_id, 'devolver', quantidadeParaReverter);
-      }
-    } catch (stockError) {
-      console.error('Erro ao reverter estoque na exclusão:', stockError);
-      // Não falhar a exclusão por causa do estoque, apenas logar o erro
-    }
-  }
+  // Nota: Não atualizamos o estoque na tabela livros pois os campos não existem
+  // O estoque é calculado em tempo real baseado nos empréstimos
+  console.log('Empréstimo excluído com sucesso. Estoque será recalculado automaticamente.');
 };
 
 export const getLoansByStudent = async (studentId: string): Promise<Loan[]> => {
