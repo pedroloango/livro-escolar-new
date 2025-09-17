@@ -216,7 +216,7 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
     // O estoque é calculado em tempo real baseado nos empréstimos
     console.log('Empréstimo criado com sucesso. Estoque será recalculado automaticamente.');
     
-    return populateLoan(data as Loan);
+    return data as Loan;
   } catch (error) {
     console.error('Erro ao criar empréstimo:', error);
     throw error;
@@ -309,7 +309,7 @@ export const returnLoan = async (id: string, returnData: { data_devolucao: strin
   // O estoque é calculado em tempo real baseado nos empréstimos
   console.log('Devolução registrada com sucesso. Estoque será recalculado automaticamente.');
   
-  return populateLoan(updatedData as Loan);
+  return updatedData as Loan;
 };
 
 export const deleteLoan = async (id: string): Promise<void> => {
