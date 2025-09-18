@@ -298,22 +298,6 @@ export default function Loans({
             </>
           )}
         </div>
-        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Confirmar exclusão</DialogTitle>
-            </DialogHeader>
-            <p>Tem certeza que deseja excluir este empréstimo? Esta ação não poderá ser desfeita.</p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button variant="destructive" onClick={confirmDelete}>
-                Excluir
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </DashboardLayout>
     );
   }
@@ -384,6 +368,24 @@ export default function Loans({
           )}
         </>
       )}
+      
+      {/* Dialog de confirmação de exclusão - sempre renderizado */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar exclusão</DialogTitle>
+          </DialogHeader>
+          <p>Tem certeza que deseja excluir este empréstimo? Esta ação não poderá ser desfeita.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
