@@ -120,7 +120,7 @@ export const getLoanById = async (id: string): Promise<Loan | undefined> => {
     throw error;
   }
   
-  return data ? populateLoan(data as Loan) : undefined;
+  return data ? (data as Loan) : undefined;
 };
 
 export const createLoan = async (loan: Loan): Promise<Loan> => {
@@ -261,7 +261,7 @@ export const updateLoan = async (id: string, data: Partial<Loan>): Promise<Loan>
     throw error;
   }
   
-  return populateLoan(updatedData as Loan);
+  return updatedData as Loan;
 };
 
 export const returnLoan = async (id: string, returnData: { data_devolucao: string, quantidade_devolvida: number }): Promise<Loan> => {
@@ -352,11 +352,7 @@ export const getLoansByStudent = async (studentId: string): Promise<Loan[]> => {
     throw error;
   }
   
-  const populatedLoans = await Promise.all(
-    (data || []).map(loan => populateLoan(loan as Loan))
-  );
-  
-  return populatedLoans;
+  return (data || []) as Loan[];
 };
 
 export const getLoansByBook = async (bookId: string): Promise<Loan[]> => {

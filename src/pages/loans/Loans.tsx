@@ -55,13 +55,31 @@ export default function Loans({
   }, [currentPage]);
 
   useEffect(() => {
-    // Reset to first page when filters change
-    if (currentPage !== 1) {
-      setCurrentPage(1);
-    } else {
-      fetchLoans();
+    // Apply filters to existing data without refetching
+    applyFilters();
+  }, [studentFilter, bookFilter, statusFilter, loans]);
+
+  const applyFilters = () => {
+    let filteredData = loans;
+    
+    if (studentFilter) {
+      filteredData = filteredData.filter(loan => 
+        loan.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase())
+      );
     }
-  }, [studentFilter, bookFilter, statusFilter]);
+    
+    if (bookFilter) {
+      filteredData = filteredData.filter(loan => 
+        loan.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase())
+      );
+    }
+    
+    if (statusFilter && statusFilter !== 'all') {
+      filteredData = filteredData.filter(loan => loan.status === statusFilter);
+    }
+    
+    setFilteredLoans(filteredData);
+  };
 
   const fetchLoans = async () => {
     try {
@@ -69,28 +87,7 @@ export default function Loans({
       const offset = (currentPage - 1) * itemsPerPage;
       const data = await getLoans(itemsPerPage, offset);
       
-      // For now, we'll implement client-side filtering
-      // In a real app, you'd want server-side filtering
-      let filteredData = data;
-      
-      if (studentFilter) {
-        filteredData = filteredData.filter(loan => 
-          loan.aluno?.nome.toLowerCase().includes(studentFilter.toLowerCase())
-        );
-      }
-      
-      if (bookFilter) {
-        filteredData = filteredData.filter(loan => 
-          loan.livro?.titulo.toLowerCase().includes(bookFilter.toLowerCase())
-        );
-      }
-      
-      if (statusFilter && statusFilter !== 'all') {
-        filteredData = filteredData.filter(loan => loan.status === statusFilter);
-      }
-      
       setLoans(data);
-      setFilteredLoans(filteredData);
       
       // For now, we'll estimate total pages based on current data
       // In a real app, you'd get this from the server
