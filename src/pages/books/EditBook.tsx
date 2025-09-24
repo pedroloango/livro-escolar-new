@@ -39,13 +39,21 @@ export default function EditBook() {
 
   const handleSubmit = async (data: Book) => {
     try {
+      console.log('EditBook Debug - handleSubmit:', { id, data });
       setIsSubmitting(true);
-      if (!id) return;
-      await updateBook(id, data);
+      if (!id) {
+        console.log('EditBook Debug - ID não encontrado');
+        return;
+      }
+      
+      console.log('EditBook Debug - Chamando updateBook');
+      const result = await updateBook(id, data);
+      console.log('EditBook Debug - updateBook resultado:', result);
+      
       toast.success('Livro atualizado com sucesso!');
       navigate('/books');
     } catch (error) {
-      console.error('Failed to update book:', error);
+      console.error('EditBook Debug - Erro ao atualizar livro:', error);
       toast.error('Erro ao atualizar livro');
     } finally {
       setIsSubmitting(false);

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Barcode, Package, AlertTriangle, RefreshCw } from 'lucide-react';
-import { getBooks, deleteBook, findBookByBarcode, getBooksCount, getStockSummary, syncBooksStockWithLoans } from '@/services/bookService';
+import { getBooks, deleteBook, findBookByBarcode, getBooksCount, getStockSummary, syncBooksStockWithLoans, migrateStockFields, checkStockFieldsExist } from '@/services/bookService';
 import { lookupBookByIsbn } from '@/services/bookLookupService';
 import { Book } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
@@ -54,6 +54,8 @@ export default function Books() {
     totalLoaned: number;
     lowStockBooks: number;
   } | null>(null);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [fieldsExist, setFieldsExist] = useState<boolean | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export default function Books() {
       fetchBooks();
       fetchBooksCount();
       fetchStockSummary();
+      checkFields();
     }
   }, [authLoading, isAuthenticated]);
 
@@ -75,6 +78,37 @@ export default function Books() {
       setFilteredBooks(books);
     }
   }, [books, titleFilter]);
+
+  const checkFields = async () => {
+    try {
+      const exist = await checkStockFieldsExist();
+      setFieldsExist(exist);
+    } catch (error) {
+      console.error('Erro ao verificar campos:', error);
+    }
+  };
+
+  const handleMigration = async () => {
+    try {
+      setIsMigrating(true);
+      const success = await migrateStockFields();
+      
+      if (success) {
+        toast.success('Campos de quantidade criados com sucesso!');
+        setFieldsExist(true);
+        // Recarregar os dados
+        await fetchBooks();
+        await fetchStockSummary();
+      } else {
+        toast.error('Erro ao criar campos de quantidade');
+      }
+    } catch (error) {
+      console.error('Erro na migração:', error);
+      toast.error('Erro ao executar migração');
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   const fetchBooks = async () => {
     try {
@@ -294,11 +328,38 @@ export default function Books() {
               <RefreshCw className="mr-2 h-4 w-4" />
               Atualizar Estoque
             </Button>
+            {fieldsExist === false && (
+              <Button 
+                variant="outline" 
+                onClick={handleMigration}
+                disabled={isMigrating}
+                className="text-sm"
+              >
+                <Package className="mr-2 h-4 w-4" />
+                {isMigrating ? 'Criando Campos...' : 'Criar Campos de Estoque'}
+              </Button>
+            )}
             <Button onClick={() => navigate('/books/new')}>
               <Plus className="mr-2 h-4 w-4" /> Novo Livro
             </Button>
           </div>
         </div>
+
+        {/* Mensagem sobre campos de quantidade */}
+        {fieldsExist === false && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              <div>
+                <h3 className="font-medium text-yellow-800">Campos de Estoque Não Encontrados</h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Os campos de quantidade (quantidade_total, quantidade_disponivel, quantidade_emprestada) não existem na tabela de livros. 
+                  Clique em "Criar Campos de Estoque" para adicionar esses campos e ter controle completo do estoque.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="h-96 flex items-center justify-center">

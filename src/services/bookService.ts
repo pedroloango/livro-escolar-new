@@ -136,6 +136,9 @@ export const findBookByBarcode = async (barcode: string): Promise<Book | undefin
 
 export const getBookById = async (id: string): Promise<Book | undefined> => {
   try {
+    // Verificar se os campos de quantidade existem na tabela
+    const fieldsExist = await checkStockFieldsExist();
+    
     // Obter o usuário atual para filtrar por escola_id
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
@@ -152,6 +155,12 @@ export const getBookById = async (id: string): Promise<Book | undefined> => {
     if (error) {
       console.error('Erro ao buscar livro por ID:', error);
       return undefined;
+    }
+    
+    // Se os campos de quantidade não existem, calcular em tempo real
+    if (!fieldsExist && data) {
+      const livroComEstoque = await calculateBookStock(data.id);
+      return livroComEstoque || data;
     }
     
     return data;
@@ -192,21 +201,33 @@ export const createBook = async (book: Book): Promise<Book> => {
 
 export const updateBook = async (id: string, book: Partial<Book>): Promise<Book> => {
   try {
+    console.log('updateBook Debug:', { id, book, fieldsToUpdate: Object.keys(book) });
+    
+    // Verificar se os campos de quantidade existem na tabela
+    const fieldsExist = await checkStockFieldsExist();
+    
     const updateData: any = {
       titulo: book.titulo,
       codigo_barras: book.codigo_barras
     };
     
-    // Incluir campos de quantidade se fornecidos
-    if (book.quantidade_total !== undefined) {
-      updateData.quantidade_total = book.quantidade_total;
+    console.log('updateBook Debug - updateData inicial:', updateData);
+    console.log('updateBook Debug - fieldsExist:', fieldsExist);
+    
+    // Incluir campos de quantidade apenas se existirem na tabela
+    if (fieldsExist) {
+      if (book.quantidade_total !== undefined) {
+        updateData.quantidade_total = book.quantidade_total;
+      }
+      if (book.quantidade_disponivel !== undefined) {
+        updateData.quantidade_disponivel = book.quantidade_disponivel;
+      }
+      if (book.quantidade_emprestada !== undefined) {
+        updateData.quantidade_emprestada = book.quantidade_emprestada;
+      }
     }
-    if (book.quantidade_disponivel !== undefined) {
-      updateData.quantidade_disponivel = book.quantidade_disponivel;
-    }
-    if (book.quantidade_emprestada !== undefined) {
-      updateData.quantidade_emprestada = book.quantidade_emprestada;
-    }
+    
+    console.log('updateBook Debug - updateData final:', updateData);
     
     const { data, error } = await supabase
       .from('livros')
@@ -218,6 +239,15 @@ export const updateBook = async (id: string, book: Partial<Book>): Promise<Book>
     if (error) {
       console.error('Erro ao atualizar livro:', error);
       throw error;
+    }
+    
+    console.log('updateBook Debug - dados atualizados:', data);
+    
+    // Se os campos de quantidade não existem, calcular em tempo real
+    if (!fieldsExist && data) {
+      const livroComEstoque = await calculateBookStock(data.id);
+      console.log('updateBook Debug - livro com estoque calculado:', livroComEstoque);
+      return livroComEstoque || data;
     }
     
     return data;
@@ -352,10 +382,151 @@ export const checkStockFieldsExist = async (): Promise<boolean> => {
       return false;
     }
 
-    return true;
+    // Verificar se os dados retornados contêm os campos
+    if (data && data.length > 0) {
+      const book = data[0];
+      return book.hasOwnProperty('quantidade_total') && 
+             book.hasOwnProperty('quantidade_disponivel') && 
+             book.hasOwnProperty('quantidade_emprestada');
+    }
+
+    return false;
   } catch (error) {
     console.log('Erro ao verificar campos de quantidade:', error);
     return false;
+  }
+};
+
+// Função para executar a migração dos campos de quantidade
+export const migrateStockFields = async (): Promise<boolean> => {
+  try {
+    console.log('Iniciando migração dos campos de quantidade...');
+    
+    // Executar a função SQL para adicionar os campos
+    const { data, error } = await supabase.rpc('add_stock_fields_to_books');
+    
+    if (error) {
+      console.error('Erro ao executar migração:', error);
+      return false;
+    }
+    
+    console.log('Migração executada com sucesso:', data);
+    
+    // Verificar se os campos foram criados
+    const fieldsExist = await checkStockFieldsExist();
+    console.log('Campos de quantidade existem após migração:', fieldsExist);
+    
+    return fieldsExist;
+  } catch (error) {
+    console.error('Erro na migração dos campos de quantidade:', error);
+    return false;
+  }
+};
+
+// Função para calcular estoque de um livro específico em tempo real
+export const calculateBookStock = async (bookId: string): Promise<Book | null> => {
+  try {
+    // Obter o usuário atual para filtrar por escola_id
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    
+    // Buscar o livro
+    let query = supabase.from('livros').select('*').eq('id', bookId);
+    
+    if (escolaId) {
+      query = query.eq('escola_id', escolaId);
+    }
+    
+    const { data: book, error: bookError } = await query.single();
+    
+    if (bookError || !book) {
+      console.error('Erro ao buscar livro para cálculo de estoque:', bookError);
+      return null;
+    }
+    
+    // Buscar empréstimos ativos para este livro
+    let loansQuery = supabase
+      .from('emprestimos')
+      .select('quantidade_retirada, quantidade_devolvida, status')
+      .eq('livro_id', bookId)
+      .in('status', ['Emprestado', 'Pendente']);
+    
+    if (escolaId) {
+      loansQuery = loansQuery.eq('escola_id', escolaId);
+    }
+    
+    const { data: activeLoans, error: loansError } = await loansQuery;
+    
+    if (loansError) {
+      console.error('Erro ao buscar empréstimos para cálculo de estoque:', loansError);
+      return null;
+    }
+    
+    // Calcular quantidade emprestada
+    const quantidadeEmprestada = (activeLoans || []).reduce((total, loan) => {
+      const retirada = loan.quantidade_retirada || 0;
+      const devolvida = loan.quantidade_devolvida || 0;
+      return total + (retirada - devolvida);
+    }, 0);
+    
+    // Calcular quantidade total e disponível
+    const quantidadeTotal = book.quantidade_total || 1;
+    const quantidadeDisponivel = Math.max(0, quantidadeTotal - quantidadeEmprestada);
+    
+    return {
+      ...book,
+      quantidade_total: quantidadeTotal,
+      quantidade_disponivel: quantidadeDisponivel,
+      quantidade_emprestada: quantidadeEmprestada
+    };
+  } catch (error) {
+    console.error('Erro ao calcular estoque do livro:', error);
+    return null;
+  }
+};
+
+// Função para buscar empréstimos pendentes de um livro específico
+export const getPendingLoansForBook = async (bookId: string): Promise<{
+  quantidadePendente: number;
+  emprestimos: any[];
+}> => {
+  try {
+    // Obter o usuário atual para filtrar por escola_id
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    
+    // Buscar empréstimos pendentes para este livro
+    let loansQuery = supabase
+      .from('emprestimos')
+      .select('id, quantidade_retirada, quantidade_devolvida, status, aluno_id, professor_id, data_retirada')
+      .eq('livro_id', bookId)
+      .eq('status', 'Pendente');
+    
+    if (escolaId) {
+      loansQuery = loansQuery.eq('escola_id', escolaId);
+    }
+    
+    const { data: pendingLoans, error: loansError } = await loansQuery;
+    
+    if (loansError) {
+      console.error('Erro ao buscar empréstimos pendentes:', loansError);
+      return { quantidadePendente: 0, emprestimos: [] };
+    }
+    
+    // Calcular quantidade pendente
+    const quantidadePendente = (pendingLoans || []).reduce((total, loan) => {
+      const retirada = loan.quantidade_retirada || 0;
+      const devolvida = loan.quantidade_devolvida || 0;
+      return total + (retirada - devolvida);
+    }, 0);
+    
+    return {
+      quantidadePendente,
+      emprestimos: pendingLoans || []
+    };
+  } catch (error) {
+    console.error('Erro ao buscar empréstimos pendentes:', error);
+    return { quantidadePendente: 0, emprestimos: [] };
   }
 };
 
