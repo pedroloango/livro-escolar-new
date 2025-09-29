@@ -2,31 +2,38 @@ import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getDashboardStats } from '@/services/loanService';
+import { getStorytellingsByProfessional, getStorytellingsBySerieTurma, getAllStorytellingsCount } from '@/services/storytellingService';
 import { Link } from 'react-router-dom';
-import { Book, Users, BookMarked, ArrowDownToLine } from 'lucide-react';
+import { Book, Users, BookMarked, ArrowDownToLine, BookOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCache } from '@/hooks/useCache';
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton';
-import { Bar, Doughnut } from 'react-chartjs-2';
+import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   BarElement,
   ArcElement,
+  LineElement,
+  PointElement,
   Tooltip,
   Legend,
   Title,
 } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   BarElement,
   ArcElement,
+  LineElement,
+  PointElement,
   Tooltip,
   Legend,
-  Title
+  Title,
+  ChartDataLabels
 );
 
 export default function Dashboard() {
@@ -35,13 +42,21 @@ export default function Dashboard() {
     totalBooks: 0,
     activeLoans: 0,
     totalLoans: 0,
+    totalStorytellings: 0,
   });
   const { isAuthenticated, loading: authLoading } = useAuth();
 
   // Novos estados para os gráficos
   const [emprestimosPorSerie, setEmprestimosPorSerie] = useState<any>(null);
+  const [emprestimosPorSerieTurma, setEmprestimosPorSerieTurma] = useState<any>(null);
   const [emprestimosPorStatus, setEmprestimosPorStatus] = useState<any>(null);
   const [topAlunos, setTopAlunos] = useState<any>(null);
+  const [emprestimosPorMes, setEmprestimosPorMes] = useState<any>(null);
+  
+  // Estados para gráficos de storytelling
+  const [storytellingPorProfissional, setStorytellingPorProfissional] = useState<any>(null);
+  const [storytellingPorSerieTurma, setStorytellingPorSerieTurma] = useState<any>(null);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
   // Use cache for dashboard data with 2 minutes TTL
   const { data: dashboardData, loading: dashboardLoading, refetch } = useCache(
@@ -57,9 +72,27 @@ export default function Dashboard() {
         totalBooks: dashboardData.totalBooks,
         activeLoans: dashboardData.activeLoans,
         totalLoans: dashboardData.totalLoans,
+        totalStorytellings: dashboardData.totalStorytellings,
       });
 
-      // Gráfico de Empréstimos por Série
+      // Gráfico de Empréstimos por Série/Turma (novo formato) - Ordenado por valores decrescentes
+      const serieTurmaEntries = Object.entries(dashboardData.emprestimosPorSerieTurma);
+      const sortedSerieTurma = serieTurmaEntries.sort((a, b) => b[1] - a[1]);
+      const serieTurmaLabels = sortedSerieTurma.map(([label]) => label);
+      const serieTurmaData = sortedSerieTurma.map(([, value]) => value);
+      
+      setEmprestimosPorSerieTurma({
+        labels: serieTurmaLabels,
+        datasets: [
+          {
+            label: 'Empréstimos por Série/Turma',
+            data: serieTurmaData,
+            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+          },
+        ],
+      });
+
+      // Gráfico de Empréstimos por Série (mantido para compatibilidade)
       const serieLabels = Object.keys(dashboardData.emprestimosPorSerie);
       const serieData = Object.values(dashboardData.emprestimosPorSerie);
       setEmprestimosPorSerie({
@@ -97,8 +130,79 @@ export default function Dashboard() {
           },
         ],
       });
+
+      // Gráfico de Empréstimos por Mês (últimos 6 meses)
+      const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'];
+      const emprestimosPorMesData = [12, 19, 8, 15, 22, 18]; // Dados mockados por enquanto
+      setEmprestimosPorMes({
+        labels: meses,
+        datasets: [
+          {
+            label: 'Empréstimos por Mês',
+            data: emprestimosPorMesData,
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            tension: 0.1,
+          },
+        ],
+      });
     }
   }, [dashboardData]);
+
+  // Carregar dados de storytelling separadamente
+  useEffect(() => {
+    const loadStorytellingData = async () => {
+      try {
+        // Primeiro, verificar o total de registros na tabela
+        const totalCount = await getAllStorytellingsCount();
+        setDebugInfo(`Total na tabela: ${totalCount} registros`);
+        
+        // Gráfico de rosca - Contação por Profissional
+        const profissionalData = await getStorytellingsByProfessional();
+        const profissionalLabels = Object.keys(profissionalData);
+        const profissionalValues = Object.values(profissionalData);
+        
+        setStorytellingPorProfissional({
+          labels: profissionalLabels,
+          datasets: [
+            {
+              data: profissionalValues,
+              backgroundColor: [
+                '#FF6384', '#36A2EB', '#FFCE56', '#8884d8', '#82ca9d',
+                '#ff9f40', '#ff6384', '#c9cbcf', '#4bc0c0', '#9966ff'
+              ],
+            },
+          ],
+        });
+
+        // Gráfico de barra - Contação por Série/Turma - Ordenado por valores decrescentes
+        const serieTurmaData = await getStorytellingsBySerieTurma();
+        const serieTurmaEntries = Object.entries(serieTurmaData);
+        const sortedSerieTurma = serieTurmaEntries.sort((a, b) => b[1] - a[1]);
+        const serieTurmaLabels = sortedSerieTurma.map(([label]) => label);
+        const serieTurmaValues = sortedSerieTurma.map(([, value]) => value);
+        
+        setStorytellingPorSerieTurma({
+          labels: serieTurmaLabels,
+          datasets: [
+            {
+              label: 'Contações por Série/Turma',
+              data: serieTurmaValues,
+              backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            },
+          ],
+        });
+        
+        console.log(`Debug - Total: ${totalCount}, Profissionais: ${profissionalLabels.length}, Série/Turma: ${serieTurmaLabels.length}`);
+      } catch (error) {
+        console.error('Erro ao carregar dados de storytelling:', error);
+      }
+    };
+
+    if (isAuthenticated && !authLoading) {
+      loadStorytellingData();
+    }
+  }, [isAuthenticated, authLoading]);
 
   return (
     <DashboardLayout>
@@ -111,10 +215,19 @@ export default function Dashboard() {
           }
         </p>
 
+        {/* Debug Info */}
+        {debugInfo && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="text-sm text-blue-800">
+              <strong>Debug:</strong> {debugInfo}
+            </div>
+          </div>
+        )}
+
         {(authLoading || dashboardLoading) ? (
-          <LoadingSkeleton type="card" count={4} />
+          <LoadingSkeleton type="card" count={5} />
         ) : (
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
             <Link to="/students">
               <Card className="hover:bg-muted/30 transition-colors cursor-pointer">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -198,6 +311,27 @@ export default function Dashboard() {
                 </CardContent>
               </Card>
             </Link>
+
+            <Link to="/storytelling">
+              <Card className="hover:bg-muted/30 transition-colors cursor-pointer">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <div className="space-y-1">
+                    <CardTitle className="text-sm font-medium">
+                      Contação de Histórias
+                    </CardTitle>
+                    <CardDescription>
+                      Sessões de contação realizadas
+                    </CardDescription>
+                  </div>
+                  <div className="text-primary bg-primary/10 p-2 rounded-md">
+                    <BookOpen className="h-4 w-4" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.totalStorytellings}</div>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
         )}
 
@@ -271,32 +405,107 @@ export default function Dashboard() {
         </div>
 
         {(authLoading || dashboardLoading) ? (
-          <LoadingSkeleton type="chart" count={3} />
+          <LoadingSkeleton type="chart" count={6} />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-6">
+            {/* Gráficos de Empréstimos */}
             <div>
-              <h2 className="text-xl font-bold">Empréstimos por Série</h2>
-              {emprestimosPorSerie && (
-                <div style={{ height: 300 }}>
-                  <Bar data={emprestimosPorSerie} options={{ maintainAspectRatio: false }} />
+              <h2 className="text-2xl font-bold mb-4">Estatísticas de Empréstimos</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="text-xl font-bold">Empréstimos por Série/Turma</h3>
+                  {emprestimosPorSerieTurma && (
+                    <div style={{ height: 300 }}>
+                      <Bar 
+                        data={emprestimosPorSerieTurma} 
+                        options={{ 
+                          maintainAspectRatio: false,
+                          plugins: {
+                            datalabels: {
+                              display: true,
+                              color: 'black',
+                              font: {
+                                weight: 'bold',
+                                size: 12
+                              },
+                              anchor: 'end',
+                              align: 'top',
+                              offset: 4,
+                              formatter: (value: number) => value
+                            }
+                          }
+                        }} 
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+                <div>
+                  <h3 className="text-xl font-bold">Empréstimos por Status</h3>
+                  {emprestimosPorStatus && (
+                    <div style={{ height: 300 }}>
+                      <Doughnut data={emprestimosPorStatus} options={{ maintainAspectRatio: false }} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Top 15 Alunos</h3>
+                  {topAlunos && (
+                    <div style={{ height: 300 }}>
+                      <Bar data={topAlunos} options={{ indexAxis: 'y', maintainAspectRatio: false }} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Empréstimos por Mês</h3>
+                  {emprestimosPorMes && (
+                    <div style={{ height: 300 }}>
+                      <Line data={emprestimosPorMes} options={{ maintainAspectRatio: false }} />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {/* Gráficos de Contação de Histórias */}
             <div>
-              <h2 className="text-xl font-bold">Empréstimos por Status</h2>
-              {emprestimosPorStatus && (
-                <div style={{ height: 300 }}>
-                  <Doughnut data={emprestimosPorStatus} options={{ maintainAspectRatio: false }} />
+              <h2 className="text-2xl font-bold mb-4">Estatísticas de Contação de Histórias</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="text-xl font-bold">Contação por Profissional</h3>
+                  {storytellingPorProfissional && (
+                    <div style={{ height: 300 }}>
+                      <Doughnut data={storytellingPorProfissional} options={{ maintainAspectRatio: false }} />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div>
-              <h2 className="text-xl font-bold">Top 15 Alunos</h2>
-              {topAlunos && (
-                <div style={{ height: 300 }}>
-                  <Bar data={topAlunos} options={{ indexAxis: 'y', maintainAspectRatio: false }} />
+                <div>
+                  <h3 className="text-xl font-bold">Contação por Série/Turma</h3>
+                  {storytellingPorSerieTurma && (
+                    <div style={{ height: 300 }}>
+                      <Bar 
+                        data={storytellingPorSerieTurma} 
+                        options={{ 
+                          maintainAspectRatio: false,
+                          plugins: {
+                            datalabels: {
+                              display: true,
+                              color: 'black',
+                              font: {
+                                weight: 'bold',
+                                size: 12
+                              },
+                              anchor: 'end',
+                              align: 'top',
+                              offset: 4,
+                              formatter: (value: number) => value
+                            }
+                          }
+                        }} 
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}

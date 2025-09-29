@@ -2,6 +2,7 @@ import { Loan, Student, Book } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
 import { updateBookStock } from '@/services/bookService';
+import { getStorytellingCount } from '@/services/storytellingService';
 
 // Helper function to populate loan with student and book data using JOIN
 async function populateLoan(loan: Loan): Promise<Loan> {
@@ -379,7 +380,9 @@ export const getDashboardStats = async (): Promise<{
   totalBooks: number;
   activeLoans: number;
   totalLoans: number;
+  totalStorytellings: number;
   emprestimosPorSerie: Record<string, number>;
+  emprestimosPorSerieTurma: Record<string, number>;
   emprestimosPorStatus: Record<string, number>;
   topAlunos: Array<{ nome: string; count: number }>;
 }> => {
@@ -431,6 +434,15 @@ export const getDashboardStats = async (): Promise<{
       throw booksError;
     }
     
+    // Get storytelling count using dedicated service
+    let totalStorytellings = 0;
+    try {
+      totalStorytellings = await getStorytellingCount();
+    } catch (storytellingError) {
+      console.error('Erro ao contar contações de histórias:', storytellingError);
+      console.log('Continuando sem dados de storytelling...');
+    }
+    
     const loansData = loans || [];
     
     // Calculate statistics
@@ -440,7 +452,16 @@ export const getDashboardStats = async (): Promise<{
     
     const totalLoans = loansData.length;
     
-    // Empréstimos por série
+    // Empréstimos por série/turma concatenada
+    const emprestimosPorSerieTurma: Record<string, number> = {};
+    loansData.forEach((loan: any) => {
+      const serie = loan.serie || 'N/A';
+      const turma = loan.turma || 'N/A';
+      const serieTurma = `${serie} - ${turma}`;
+      emprestimosPorSerieTurma[serieTurma] = (emprestimosPorSerieTurma[serieTurma] || 0) + 1;
+    });
+    
+    // Empréstimos por série (mantido para compatibilidade)
     const emprestimosPorSerie: Record<string, number> = {};
     loansData.forEach((loan: any) => {
       const serie = loan.serie || 'N/A';
@@ -471,7 +492,9 @@ export const getDashboardStats = async (): Promise<{
       totalBooks: totalBooks || 0,
       activeLoans,
       totalLoans,
+      totalStorytellings: totalStorytellings || 0,
       emprestimosPorSerie,
+      emprestimosPorSerieTurma,
       emprestimosPorStatus,
       topAlunos
     };

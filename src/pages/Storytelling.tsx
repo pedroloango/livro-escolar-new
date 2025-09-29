@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { getStorytellings, deleteStorytelling, Storytelling } from '@/services/storytellingService';
+import { getStorytellings, deleteStorytelling, Storytelling, getAllStorytellingsCount, getAllStorytellings } from '@/services/storytellingService';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -13,14 +13,35 @@ export default function StorytellingPage() {
   const [loading, setLoading] = useState(false);
   const [teacherMap, setTeacherMap] = useState<Record<string, string>>({});
   const [bookMap, setBookMap] = useState<Record<string, string>>({});
+  const [debugInfo, setDebugInfo] = useState<string>('');
   const navigate = useNavigate();
 
   async function fetchStorytellings() {
     setLoading(true);
     try {
+      // Teste: verificar contagem total primeiro
+      const totalCount = await getAllStorytellingsCount();
+      console.log('Storytelling Page - Total na tabela:', totalCount);
+      
+      // Teste: buscar todos os registros sem filtros
+      const allData = await getAllStorytellings();
+      console.log('Storytelling Page - Todos os registros:', allData.length);
+      
+      // Usar a função normal
       const data = await getStorytellings();
-      setStorytellings(data);
+      console.log('Storytelling Page - Dados carregados:', data.length, 'registros');
+      console.log('Storytelling Page - Primeiros registros:', data.slice(0, 3));
+      
+      if (data.length !== totalCount) {
+        console.warn(`Storytelling Page - Discrepância: ${data.length} carregados vs ${totalCount} total`);
+        setDebugInfo(`⚠️ Discrepância detectada: ${data.length} carregados vs ${totalCount} total na tabela. Usando todos os registros.`);
+        setStorytellings(allData); // Usar todos os registros se houver discrepância
+      } else {
+        setDebugInfo(`✅ Dados corretos: ${data.length} registros carregados`);
+        setStorytellings(data);
+      }
     } catch (e) {
+      console.error('Storytelling Page - Erro ao buscar:', e);
       toast.error('Erro ao buscar registros de contação');
     } finally {
       setLoading(false);
@@ -68,6 +89,15 @@ export default function StorytellingPage() {
           <h1 className="text-2xl font-bold tracking-tight">Contação de histórias</h1>
           <Button onClick={() => navigate('/storytelling/new')}>Registrar Contação de histórias</Button>
         </div>
+
+        {/* Debug Info */}
+        {debugInfo && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="text-sm text-blue-800">
+              <strong>Debug:</strong> {debugInfo}
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <Table>
             <thead>
