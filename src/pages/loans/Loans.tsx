@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, ArrowDownToLine } from 'lucide-react';
+import { Plus, ArrowDownToLine, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { getLoans, deleteLoan } from '@/services/loanService';
 import { Loan } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
@@ -39,6 +40,7 @@ export default function Loans({
   const [filteredLoans, setFilteredLoans] = useState<Loan[]>([]);
   const [allLoans, setAllLoans] = useState<Loan[]>([]); // Todos os empréstimos para filtros
   const [loadingAllLoans, setLoadingAllLoans] = useState(false); // Loading para busca completa
+  const [exporting, setExporting] = useState(false); // Loading para exportação
   const [studentFilter, setStudentFilter] = useState('');
   const [bookFilter, setBookFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -201,6 +203,114 @@ export default function Loans({
     }
   };
 
+  const exportToExcel = async () => {
+    try {
+      setExporting(true);
+      toast.info('Buscando todos os empréstimos filtrados...');
+      
+      // Buscar TODOS os empréstimos do servidor (sem limite de paginação)
+      let allFilteredData: Loan[] = [];
+      let page = 0;
+      const pageSize = 1000; // Tamanho da página para buscar
+      let hasMore = true;
+
+      while (hasMore) {
+        const offset = page * pageSize;
+        const data = await getLoans(pageSize, offset);
+        
+        if (data.length === 0) {
+          hasMore = false;
+        } else {
+          // Aplicar os mesmos filtros que estão na interface
+          let filteredPage = data;
+          
+          if (studentFilter) {
+            filteredPage = filteredPage.filter(loan => 
+              loan.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase())
+            );
+          }
+          
+          if (bookFilter) {
+            filteredPage = filteredPage.filter(loan => 
+              loan.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase())
+            );
+          }
+          
+          if (statusFilter && statusFilter !== 'all') {
+            filteredPage = filteredPage.filter(loan => loan.status === statusFilter);
+          }
+          
+          if (serieFilter && serieFilter !== 'all') {
+            filteredPage = filteredPage.filter(loan => 
+              loan.aluno?.serie === serieFilter
+            );
+          }
+          
+          if (turmaFilter && turmaFilter !== 'all') {
+            filteredPage = filteredPage.filter(loan => 
+              loan.aluno?.turma === turmaFilter
+            );
+          }
+          
+          allFilteredData = [...allFilteredData, ...filteredPage];
+          page++;
+          
+          // Se retornou menos que o pageSize, não há mais dados
+          if (data.length < pageSize) {
+            hasMore = false;
+          }
+        }
+      }
+
+      if (allFilteredData.length === 0) {
+        toast.error('Não há empréstimos para exportar com os filtros aplicados');
+        return;
+      }
+
+      // Preparar os dados para exportação
+      const excelData = allFilteredData.map(loan => ({
+        'Aluno': loan.aluno?.nome || 'N/A',
+        'Livro': loan.livro?.titulo || 'N/A',
+        'Data de Retirada': loan.data_retirada ? format(parseISO(loan.data_retirada), 'dd/MM/yyyy') : 'N/A',
+        'Quantidade': loan.quantidade_retirada || 0,
+        'Data de Devolução': loan.data_devolucao ? format(parseISO(loan.data_devolucao), 'dd/MM/yyyy') : 'Pendente',
+        'Status': loan.status || 'N/A',
+        'Série': loan.aluno?.serie || 'N/A',
+        'Turma': loan.aluno?.turma || 'N/A',
+      }));
+
+      // Criar workbook e worksheet
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Empréstimos');
+
+      // Ajustar largura das colunas
+      const columnWidths = [
+        { wch: 30 }, // Aluno
+        { wch: 40 }, // Livro
+        { wch: 18 }, // Data de Retirada
+        { wch: 12 }, // Quantidade
+        { wch: 18 }, // Data de Devolução
+        { wch: 15 }, // Status
+        { wch: 10 }, // Série
+        { wch: 10 }, // Turma
+      ];
+      worksheet['!cols'] = columnWidths;
+
+      // Gerar nome do arquivo com data atual
+      const fileName = `emprestimos_${format(new Date(), 'dd-MM-yyyy_HH-mm')}.xlsx`;
+
+      // Salvar arquivo
+      XLSX.writeFile(workbook, fileName);
+      toast.success(`Arquivo Excel exportado com sucesso! (${allFilteredData.length} empréstimos)`);
+    } catch (error) {
+      console.error('Erro ao exportar para Excel:', error);
+      toast.error('Erro ao exportar para Excel');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const columns: ColumnDef<Loan>[] = [
     {
       accessorKey: 'aluno.nome',
@@ -302,9 +412,19 @@ export default function Loans({
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold tracking-tight">Empréstimos</h1>
-            <Button onClick={() => navigate('/loans/new')}>
-              <Plus className="mr-2 h-4 w-4" /> Novo Empréstimo
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={exportToExcel}
+                disabled={loading || exporting}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" /> 
+                {exporting ? 'Exportando...' : 'Exportar para Excel'}
+              </Button>
+              <Button onClick={() => navigate('/loans/new')}>
+                <Plus className="mr-2 h-4 w-4" /> Novo Empréstimo
+              </Button>
+            </div>
           </div>
 
           {loading ? (
