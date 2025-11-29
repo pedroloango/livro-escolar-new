@@ -385,30 +385,49 @@ export const getDashboardStats = async (): Promise<{
   emprestimosPorSerieTurma: Record<string, number>;
   emprestimosPorStatus: Record<string, number>;
   topAlunos: Array<{ nome: string; count: number }>;
+  emprestimosPorMes: Record<string, number>;
 }> => {
   try {
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
     
-    // Get all loans with student and book data in one query
-    let loansQuery = supabase
-      .from('emprestimos')
-      .select(`
-        *,
-        aluno:alunos(*),
-        livro:livros(*)
-      `);
-    
-    if (escolaId) {
-      loansQuery = loansQuery.eq('escola_id', escolaId);
+    // Get all loans with student and book data in batches to avoid Supabase 1000 limit
+    let allLoans: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      let loansQuery = supabase
+        .from('emprestimos')
+        .select(`
+          *,
+          aluno:alunos(*),
+          livro:livros(*)
+        `)
+        .range(from, from + batchSize - 1);
+      
+      if (escolaId) {
+        loansQuery = loansQuery.eq('escola_id', escolaId);
+      }
+      
+      const { data: loans, error: loansError } = await loansQuery;
+      
+      if (loansError) {
+        console.error('Erro ao buscar empréstimos para estatísticas:', loansError);
+        throw loansError;
+      }
+
+      if (loans && loans.length > 0) {
+        allLoans = allLoans.concat(loans);
+        from += batchSize;
+        hasMore = loans.length === batchSize;
+      } else {
+        hasMore = false;
+      }
     }
-    
-    const { data: loans, error: loansError } = await loansQuery;
-    
-    if (loansError) {
-      console.error('Erro ao buscar empréstimos para estatísticas:', loansError);
-      throw loansError;
-    }
+
+    const loans = allLoans;
     
     // Get students count
     let studentsQuery = supabase.from('alunos').select('*', { count: 'exact', head: true });
@@ -486,6 +505,32 @@ export const getDashboardStats = async (): Promise<{
       .sort((a, b) => b[1] - a[1])
       .slice(0, 15)
       .map(([nome, count]) => ({ nome, count }));
+
+    // Empréstimos por mês (últimos 6 meses)
+    const emprestimosPorMes: Record<string, number> = {};
+    const mesesAbreviados = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const hoje = new Date();
+    
+    // Inicializar os últimos 6 meses com zero
+    for (let i = 5; i >= 0; i--) {
+      const data = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const mesKey = `${mesesAbreviados[data.getMonth()]}/${data.getFullYear().toString().slice(-2)}`;
+      emprestimosPorMes[mesKey] = 0;
+    }
+    
+    // Contar empréstimos por mês
+    loansData.forEach((loan: any) => {
+      if (loan.data_retirada) {
+        const dataRetirada = new Date(loan.data_retirada);
+        const mesKey = `${mesesAbreviados[dataRetirada.getMonth()]}/${dataRetirada.getFullYear().toString().slice(-2)}`;
+        
+        // Só contar se estiver nos últimos 6 meses
+        const mesesAtras = (hoje.getFullYear() - dataRetirada.getFullYear()) * 12 + (hoje.getMonth() - dataRetirada.getMonth());
+        if (mesesAtras >= 0 && mesesAtras < 6) {
+          emprestimosPorMes[mesKey] = (emprestimosPorMes[mesKey] || 0) + 1;
+        }
+      }
+    });
     
     return {
       totalStudents: totalStudents || 0,
@@ -496,7 +541,8 @@ export const getDashboardStats = async (): Promise<{
       emprestimosPorSerie,
       emprestimosPorSerieTurma,
       emprestimosPorStatus,
-      topAlunos
+      topAlunos,
+      emprestimosPorMes
     };
   } catch (error) {
     console.error('Erro ao obter estatísticas do dashboard:', error);

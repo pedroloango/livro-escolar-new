@@ -18,19 +18,35 @@ export async function getStorytellings(): Promise<Storytelling[]> {
   try {
     console.log('getStorytellings - Buscando todos os registros...');
     
-    // Buscar todos os registros sem filtros (campo escola_id não existe na tabela)
-    const { data, error } = await supabase
-      .from('contacao_historias')
-      .select('*')
-      .order('data_contacao', { ascending: false });
-    
-    if (error) {
-      console.error('getStorytellings - Erro na busca:', error);
-      throw error;
+    // Buscar todos os registros em lotes para evitar limite de 1000 do Supabase
+    let allData: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('contacao_historias')
+        .select('*')
+        .order('data_contacao', { ascending: false })
+        .range(from, from + batchSize - 1);
+      
+      if (error) {
+        console.error('getStorytellings - Erro na busca:', error);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        allData = allData.concat(data);
+        from += batchSize;
+        hasMore = data.length === batchSize;
+      } else {
+        hasMore = false;
+      }
     }
     
-    console.log(`getStorytellings - Registros encontrados: ${data?.length || 0}`);
-    return (data || []) as Storytelling[];
+    console.log(`getStorytellings - Registros encontrados: ${allData.length}`);
+    return allData as Storytelling[];
   } catch (error) {
     console.error('Erro ao buscar contações de histórias:', error);
     throw error;
@@ -71,19 +87,35 @@ export async function getStorytellingsByProfessional(): Promise<Record<string, n
   try {
     console.log('getStorytellingsByProfessional - Buscando dados...');
     
-    // Buscar dados de storytelling com JOIN para obter nomes dos professores
-    const { data, error } = await supabase
-      .from('contacao_historias')
-      .select(`
-        profissional_id,
-        professor:professores!profissional_id(nome)
-      `);
-    
-    if (error) throw error;
+    // Buscar dados de storytelling com JOIN para obter nomes dos professores em lotes
+    let allData: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('contacao_historias')
+        .select(`
+          profissional_id,
+          professor:professores!profissional_id(nome)
+        `)
+        .range(from, from + batchSize - 1);
+      
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        allData = allData.concat(data);
+        from += batchSize;
+        hasMore = data.length === batchSize;
+      } else {
+        hasMore = false;
+      }
+    }
     
     // Contar por profissional (usando nome do professor)
     const profissionalCount: Record<string, number> = {};
-    data?.forEach((story: any) => {
+    allData.forEach((story: any) => {
       const nomeProfissional = story.professor?.nome || story.profissional_id || 'N/A';
       profissionalCount[nomeProfissional] = (profissionalCount[nomeProfissional] || 0) + 1;
     });
@@ -102,15 +134,32 @@ export async function getStorytellingsBySerieTurma(): Promise<Record<string, num
   try {
     console.log('getStorytellingsBySerieTurma - Buscando dados...');
     
-    const { data, error } = await supabase
-      .from('contacao_historias')
-      .select('serie, turma');
-    
-    if (error) throw error;
+    // Buscar dados em lotes para evitar limite de 1000 do Supabase
+    let allData: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('contacao_historias')
+        .select('serie, turma')
+        .range(from, from + batchSize - 1);
+      
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        allData = allData.concat(data);
+        from += batchSize;
+        hasMore = data.length === batchSize;
+      } else {
+        hasMore = false;
+      }
+    }
     
     // Contar por série-turma concatenado
     const serieTurmaCount: Record<string, number> = {};
-    data?.forEach((story: any) => {
+    allData.forEach((story: any) => {
       const serieTurma = `${story.serie} - ${story.turma}`;
       serieTurmaCount[serieTurma] = (serieTurmaCount[serieTurma] || 0) + 1;
     });

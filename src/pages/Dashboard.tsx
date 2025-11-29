@@ -131,15 +131,16 @@ export default function Dashboard() {
         ],
       });
 
-      // Gráfico de Empréstimos por Mês (últimos 6 meses)
-      const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'];
-      const emprestimosPorMesData = [12, 19, 8, 15, 22, 18]; // Dados mockados por enquanto
+      // Gráfico de Empréstimos por Mês (últimos 6 meses) - Dados reais do banco
+      const mesesEntries = Object.entries(dashboardData.emprestimosPorMes || {});
+      const mesesLabels = mesesEntries.map(([label]) => label);
+      const mesesData = mesesEntries.map(([, value]) => value);
       setEmprestimosPorMes({
-        labels: meses,
+        labels: mesesLabels,
         datasets: [
           {
             label: 'Empréstimos por Mês',
-            data: emprestimosPorMesData,
+            data: mesesData,
             borderColor: 'rgb(75, 192, 192)',
             backgroundColor: 'rgba(75, 192, 192, 0.2)',
             tension: 0.1,
