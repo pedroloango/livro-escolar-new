@@ -40,6 +40,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const [serieFilter, setSerieFilter] = useState<string>('all');
   const [turmaFilter, setTurmaFilter] = useState<string>('all');
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
+  const [anoFilter, setAnoFilter] = useState<string>('2026');
   const [showFilters, setShowFilters] = useState(false);
   const [personType, setPersonType] = useState<'aluno' | 'professor'>('aluno');
 
@@ -95,6 +96,9 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
     }
     if (turnoFilter && turnoFilter !== 'all') {
       result = result.filter(student => student.turno === turnoFilter);
+    }
+    if (anoFilter && anoFilter !== 'all') {
+      result = result.filter(student => String(student.ano_letivo || '').toLowerCase().includes(anoFilter.toLowerCase().trim()));
     }
     setFilteredStudents(result);
   }, [students, serieFilter, turmaFilter, turnoFilter]);
@@ -196,8 +200,17 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
 
   function handlePersonSelect(e: React.ChangeEvent<HTMLSelectElement>) {
     if (personType === 'aluno') {
-      setValue('aluno_id', e.target.value);
+      const selectedId = e.target.value;
+      setValue('aluno_id', selectedId);
       setValue('professor_id', '');
+      const sel = students.find(s => s.id === selectedId);
+      if (sel) {
+        // Pre-fill series/turma/turno and show ano letivo
+        setValue('serie', String(sel.serie), { shouldValidate: true });
+        setValue('turma', sel.turma, { shouldValidate: true });
+        setValue('turno', sel.turno, { shouldValidate: true });
+        setValue('ano_letivo', sel.ano_letivo ?? '', { shouldValidate: true });
+      }
     } else {
       setValue('professor_id', e.target.value);
       setValue('aluno_id', '');
@@ -307,6 +320,13 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                   </option>
                 ))}
               </select>
+              {/* Mostrar ano letivo do aluno selecionado */}
+              {watchStudentId && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  <strong>Ano Letivo:</strong>{' '}
+                  {students.find(s => s.id === watchStudentId)?.ano_letivo ?? '—'}
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -377,7 +397,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
           )}
 
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 mb-2 bg-muted/30 rounded-md">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 mb-2 bg-muted/30 rounded-md">
               <div className="space-y-2">
                 <Label htmlFor="serie-filter">Série</Label>
                 <Select
@@ -434,6 +454,28 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                         {turno}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="ano-filter">Ano Letivo</Label>
+                <Select
+                  value={anoFilter}
+                  onValueChange={setAnoFilter}
+                >
+                  <SelectTrigger id="ano-filter">
+                    <SelectValue placeholder="Filtrar por ano" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {Array.from(new Set(students.map(s => s.ano_letivo ? String(s.ano_letivo).trim() : null).filter(Boolean)))
+                      .sort((a,b) => Number(a) - Number(b))
+                      .map((ano) => (
+                        <SelectItem key={ano} value={ano}>
+                          {ano}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

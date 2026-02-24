@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { getStudents, deleteStudent } from '@/services/studentService';
+import { getStudents, deleteStudent, getStudentYears } from '@/services/studentService';
 import { Student } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
 import { ColumnDef } from '@tanstack/react-table';
@@ -38,18 +38,21 @@ export default function Students() {
   const [serieFilter, setSerieFilter] = useState<string>('all');
   const [turmaFilter, setTurmaFilter] = useState<string>('all');
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
+  const [anoFilter, setAnoFilter] = useState<string>('all');
   const [nameFilter, setNameFilter] = useState<string>('');
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
+  const [anos, setAnos] = useState<string[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
+      // Fetch students from server, applying anoFilter server-side for accuracy
       fetchStudents();
     }
-  }, [authLoading, isAuthenticated]);
+  }, [authLoading, isAuthenticated, anoFilter]);
 
   useEffect(() => {
-    // Apply filters when students, name filter, serie filter, or turno filter changes
+    // Apply filters when students or any filter changes
     let result = [...students];
     
     // Apply name filter
@@ -79,16 +82,34 @@ export default function Students() {
         student.turno === turnoFilter
       );
     }
+
+    // Apply ano letivo filter
+    if (anoFilter && anoFilter !== 'all') {
+      result = result.filter(student =>
+        String(student.ano_letivo || '') === anoFilter
+      );
+    }
     
     setFilteredStudents(result);
-  }, [students, nameFilter, serieFilter, turmaFilter, turnoFilter]);
+  }, [students, nameFilter, serieFilter, turmaFilter, turnoFilter, anoFilter]);
 
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const data = await getStudents();
+      const data = await getStudents(anoFilter && anoFilter !== 'all' ? { ano_letivo: anoFilter } : undefined);
       setStudents(data);
       setFilteredStudents(data);
+      // fetch distinct years from DB
+      try {
+        const years = await getStudentYears();
+        setAnos(years);
+      } catch (err) {
+        console.error('Erro ao buscar anos letivos do banco:', err);
+        // fallback to compute from students if the DB call fails
+        const fallback = Array.from(new Set(data.map(s => s.ano_letivo ? String(s.ano_letivo) : null).filter(Boolean)))
+          .sort((a, b) => Number(a) - Number(b));
+        setAnos(fallback);
+      }
     } catch (error) {
       console.error('Failed to fetch students:', error);
       toast.error('Erro ao carregar alunos');
@@ -96,6 +117,19 @@ export default function Students() {
       setLoading(false);
     }
   };
+  
+  // Debug: log counts for ano_letivo investigation
+  useEffect(() => {
+    if (students.length > 0) {
+      const total = students.length;
+      const anosMap: Record<string, number> = {};
+      students.forEach(s => {
+        const key = s.ano_letivo ? String(s.ano_letivo).trim() : 'NULL';
+        anosMap[key] = (anosMap[key] || 0) + 1;
+      });
+      console.info('Students debug - total:', total, 'anos distribution:', anosMap);
+    }
+  }, [students]);
 
   const handleDelete = async (id: string) => {
     try {
@@ -129,6 +163,14 @@ export default function Students() {
       header: 'Turno',
     },
     {
+      accessorKey: 'ano_letivo',
+      header: 'Ano Letivo',
+      cell: ({ row }) => {
+        const v = row.getValue('ano_letivo') as string | number | null | undefined;
+        return v ? String(v) : '—';
+      },
+    },
+    {
       accessorKey: 'sexo',
       header: 'Sexo',
     },
@@ -136,8 +178,11 @@ export default function Students() {
       accessorKey: 'data_nascimento',
       header: 'Data de Nascimento',
       cell: ({ row }) => {
-        const date = row.getValue('data_nascimento') as string;
-        const [year, month, day] = date.split('-');
+        const date = row.getValue('data_nascimento') as string | null | undefined;
+        if (!date) return '—';
+        const parts = String(date).split('-');
+        if (parts.length < 3) return String(date);
+        const [year, month, day] = parts;
         return `${day}/${month}/${year}`;
       },
     },
@@ -191,6 +236,8 @@ export default function Students() {
 
   // Obter turnos únicos para o filtro
   const turnos = Array.from(new Set(students.map(student => student.turno)));
+  
+  // 'anos' agora vem do estado carregado diretamente do banco (getStudentYears)
 
   return (
     <DashboardLayout>
@@ -273,6 +320,26 @@ export default function Students() {
                     {turnos.map((turno) => (
                       <SelectItem key={turno} value={turno}>
                         {turno}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="w-full md:w-32">
+                <Label htmlFor="ano-filter">Ano Letivo</Label>
+                <Select
+                  value={anoFilter}
+                  onValueChange={setAnoFilter}
+                >
+                  <SelectTrigger id="ano-filter">
+                    <SelectValue placeholder="Ano Letivo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {anos.map((ano) => (
+                      <SelectItem key={ano} value={ano}>
+                        {ano}
                       </SelectItem>
                     ))}
                   </SelectContent>

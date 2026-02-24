@@ -5,7 +5,8 @@ export interface Student {
   turma: string;
   turno: string;
   sexo: string;
-  data_nascimento: string;
+  data_nascimento?: string;
+  ano_letivo?: string | number;
   escola_id?: string;
 }
 
@@ -38,6 +39,7 @@ export interface Loan {
   serie?: string;
   turma?: string;
   turno?: string;
+  ano_letivo?: string | number;
 }
 
 export interface User {

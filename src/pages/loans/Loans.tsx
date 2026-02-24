@@ -4,7 +4,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, ArrowDownToLine, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getLoans, deleteLoan } from '@/services/loanService';
+import { getLoans, deleteLoan, getLoansCount } from '@/services/loanService';
 import { Loan } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
 import { ColumnDef } from '@tanstack/react-table';
@@ -39,11 +39,13 @@ export default function Loans({
   const [loading, setLoading] = useState(true);
   const [filteredLoans, setFilteredLoans] = useState<Loan[]>([]);
   const [allLoans, setAllLoans] = useState<Loan[]>([]); // Todos os empréstimos para filtros
+  const [pagesCache, setPagesCache] = useState<Record<number, Loan[]>>({});
   const [loadingAllLoans, setLoadingAllLoans] = useState(false); // Loading para busca completa
   const [exporting, setExporting] = useState(false); // Loading para exportação
   const [studentFilter, setStudentFilter] = useState('');
   const [bookFilter, setBookFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [anoFilter, setAnoFilter] = useState('');
   const [serieFilter, setSerieFilter] = useState('');
   const [turmaFilter, setTurmaFilter] = useState('');
   const navigate = useNavigate();
@@ -57,6 +59,11 @@ export default function Loans({
   const getUniqueTurmas = () => {
     const turmas = [...new Set(allLoans.map(loan => loan.aluno?.turma).filter(Boolean))];
     return turmas.sort();
+  };
+  
+  const getUniqueYears = () => {
+    const years = [...new Set(allLoans.map(loan => loan.aluno?.ano_letivo).filter(Boolean))];
+    return years.sort();
   };
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
@@ -74,7 +81,7 @@ export default function Loans({
   useEffect(() => {
     // Apply filters to existing data without refetching
     applyFilters();
-  }, [studentFilter, bookFilter, statusFilter, serieFilter, turmaFilter, allLoans]);
+  }, [studentFilter, bookFilter, statusFilter, serieFilter, turmaFilter, anoFilter, allLoans]);
 
   const applyFilters = () => {
     let filteredData = allLoans;
@@ -104,6 +111,12 @@ export default function Loans({
     if (turmaFilter && turmaFilter !== 'all') {
       filteredData = filteredData.filter(loan => 
         loan.aluno?.turma === turmaFilter
+      );
+    }
+    
+    if (anoFilter && anoFilter !== 'all') {
+      filteredData = filteredData.filter(loan =>
+        String(loan.aluno?.ano_letivo || '').toLowerCase().includes(String(anoFilter).toLowerCase().trim())
       );
     }
     
@@ -153,19 +166,33 @@ export default function Loans({
     try {
       setLoading(true);
       const offset = (currentPage - 1) * itemsPerPage;
-      const data = await getLoans(itemsPerPage, offset);
-      
-      setLoans(data);
+      // Use cached page if available
+      if (pagesCache[currentPage]) {
+        const cached = pagesCache[currentPage];
+        setLoans(cached);
+        // If first page ensure allLoans is loaded for filters
+        if (currentPage === 1 && allLoans.length === 0) {
+          await fetchAllLoans();
+        }
+      } else {
+        const data = await getLoans(itemsPerPage, offset);
+        setLoans(data);
+        setPagesCache(prev => ({ ...prev, [currentPage]: data }));
+      }
       
       // Se é a primeira página, também buscar todos os empréstimos para filtros
       if (currentPage === 1) {
         await fetchAllLoans();
       }
-      
-      // For now, we'll estimate total pages based on current data
-      // In a real app, you'd get this from the server
-      setTotalPages(Math.ceil(data.length / itemsPerPage));
-      setTotalCount(data.length);
+      // Fetch total count once to set pagination correctly
+      try {
+        const count = await getLoansCount();
+        setTotalCount(count);
+        setTotalPages(Math.ceil(count / itemsPerPage));
+      } catch (err) {
+        // fallback: estimate based on current data length if count fails
+        console.error('Erro ao obter contagem total de empréstimos:', err);
+      }
     } catch (error) {
       console.error('Failed to fetch loans:', error);
       toast.error('Erro ao carregar empréstimos');
@@ -249,6 +276,12 @@ export default function Loans({
           if (turmaFilter && turmaFilter !== 'all') {
             filteredPage = filteredPage.filter(loan => 
               loan.aluno?.turma === turmaFilter
+            );
+          }
+          
+          if (anoFilter && anoFilter !== 'all') {
+            filteredPage = filteredPage.filter(loan =>
+              String(loan.aluno?.ano_letivo || '').toLowerCase().includes(String(anoFilter).toLowerCase().trim())
             );
           }
           
@@ -376,6 +409,11 @@ export default function Loans({
       },
     },
     {
+      accessorKey: 'aluno.ano_letivo',
+      header: 'Ano Letivo',
+      cell: ({ row }) => row.original.aluno?.ano_letivo || '—',
+    },
+    {
       id: 'actions',
       cell: ({ row }) => {
         const loan = row.original;
@@ -431,7 +469,7 @@ export default function Loans({
             <LoadingSkeleton type="table" />
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                 <div>
                   <Label htmlFor="student-filter">Aluno</Label>
                   <Input
@@ -469,6 +507,26 @@ export default function Loans({
                     </SelectContent>
                   </Select>
                 </div>
+              
+              <div>
+                <Label htmlFor="ano-filter">Ano Letivo</Label>
+                <Select
+                  value={anoFilter}
+                  onValueChange={setAnoFilter}
+                >
+                  <SelectTrigger id="ano-filter">
+                    <SelectValue placeholder="Todos os anos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {getUniqueYears().map((ano) => (
+                      <SelectItem key={String(ano)} value={String(ano)}>
+                        {String(ano)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
                 
                 <div>
                   <Label htmlFor="serie-filter">Série</Label>
@@ -539,7 +597,7 @@ export default function Loans({
               )}
 
               {/* Indicador de filtros aplicados */}
-              {(studentFilter || bookFilter || statusFilter !== '' || serieFilter !== '' || turmaFilter !== '') && !loadingAllLoans && (
+              {(studentFilter || bookFilter || statusFilter !== '' || serieFilter !== '' || turmaFilter !== '' || anoFilter !== '') && !loadingAllLoans && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-blue-800">
@@ -554,6 +612,7 @@ export default function Loans({
                         setStatusFilter('');
                         setSerieFilter('');
                         setTurmaFilter('');
+                        setAnoFilter('');
                       }}
                     >
                       Limpar Filtros
@@ -631,6 +690,26 @@ export default function Loans({
             </div>
             
             <div>
+              <Label htmlFor="ano-filter">Ano Letivo</Label>
+              <Select
+                value={anoFilter}
+                onValueChange={setAnoFilter}
+              >
+                <SelectTrigger id="ano-filter">
+                  <SelectValue placeholder="Todos os anos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {getUniqueYears().map((ano) => (
+                    <SelectItem key={String(ano)} value={String(ano)}>
+                      {String(ano)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
               <Label htmlFor="serie-filter">Série</Label>
               <Select
                 value={serieFilter}
@@ -665,6 +744,8 @@ export default function Loans({
                 </SelectContent>
               </Select>
             </div>
+                
+                
           </div>
 
           {/* Indicador de carregamento de todos os empréstimos */}

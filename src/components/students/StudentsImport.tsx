@@ -27,7 +27,8 @@ const TEMPLATE_HEADERS = [
   'Turma',
   'Turno',
   'Sexo',
-  'Data de Nascimento (YYYY-MM-DD)'
+  'Data de Nascimento (YYYY-MM-DD)',
+  'Ano Letivo'
 ];
 
 export default function StudentsImport({ onSuccess }: StudentsImportProps) {
@@ -41,10 +42,10 @@ export default function StudentsImport({ onSuccess }: StudentsImportProps) {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Alunos');
     
-    // Exemplo de dados
+    // Exemplo de dados (inclui Ano Letivo)
     XLSX.utils.sheet_add_aoa(worksheet, [
-      ['João da Silva', '5', 'A', 'Matutino', 'Masculino', '2010-05-15'],
-      ['Maria Oliveira', '3', 'B', 'Vespertino', 'Feminino', '2012-08-22']
+      ['João da Silva', '5', 'A', 'Matutino', 'Masculino', '2010-05-15', '2025'],
+      ['Maria Oliveira', '3', 'B', 'Vespertino', 'Feminino', '2012-08-22', '2025']
     ], { origin: 'A2' });
     
     // Converter para blob e fazer download
@@ -68,18 +69,19 @@ export default function StudentsImport({ onSuccess }: StudentsImportProps) {
 
         // Validar e transformar dados
         const students = data.map((row, index) => {
-          // Verificar se tem os campos necessários
-          if (!row['Nome do Aluno'] || !row['Série'] || !row['Turma'] || !row['Turno'] || !row['Sexo'] || !row['Data de Nascimento (YYYY-MM-DD)']) {
-            throw new Error(`Linha ${index + 2}: Faltam campos obrigatórios`);
+          // Verificar se tem os campos necessários (ano letivo é opcional, sexo e data_nascimento agora opcionais)
+          if (!row['Nome do Aluno'] || !row['Série'] || !row['Turma'] || !row['Turno']) {
+            throw new Error(`Linha ${index + 2}: Faltam campos obrigatórios (Nome do Aluno, Série, Turma ou Turno)`);
           }
 
           return {
             nome: row['Nome do Aluno'],
-            serie: parseInt(row['Série']),
+            serie: Number(row['Série']) || 0,
             turma: row['Turma'],
             turno: row['Turno'],
-            sexo: row['Sexo'],
-            data_nascimento: row['Data de Nascimento (YYYY-MM-DD)']
+            sexo: row['Sexo'] ?? 'Não informado',
+            data_nascimento: row['Data de Nascimento (YYYY-MM-DD)'] ?? null,
+            ano_letivo: row['Ano Letivo'] ? String(row['Ano Letivo']) : '2025'
           } as Student;
         });
 

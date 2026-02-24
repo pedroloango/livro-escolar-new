@@ -74,6 +74,27 @@ export const getLoans = async (limit?: number, offset?: number): Promise<Loan[]>
   }
 };
 
+// Get total count of loans (for pagination)
+export const getLoansCount = async (): Promise<number> => {
+  try {
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+
+    let query = supabase.from('emprestimos').select('*', { count: 'exact', head: true });
+    if (escolaId) query = query.eq('escola_id', escolaId);
+
+    const { count, error } = await query;
+    if (error) {
+      console.error('Erro ao contar empréstimos:', error);
+      throw error;
+    }
+    return count || 0;
+  } catch (error) {
+    console.error('Erro ao obter contagem de empréstimos:', error);
+    throw error;
+  }
+};
+
 export const getActiveLoans = async (): Promise<Loan[]> => {
   try {
     // Obter o usuário atual para filtrar por escola_id
@@ -159,6 +180,12 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
       loanData.serie = aluno.serie;
       loanData.turma = aluno.turma;
       loanData.turno = aluno.turno;
+      // Registrar o ano_letivo do aluno no empréstimo (preserva histórico)
+      if (aluno.ano_letivo) {
+        loanData.ano_letivo = aluno.ano_letivo;
+      } else {
+        loanData.ano_letivo = null;
+      }
     }
     // Se for empréstimo para professor
     else if (loan.professor_id) {
@@ -184,7 +211,8 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
           turno: loan.turno || 'PROF',
           sexo: 'N/A',
           data_nascimento: new Date().toISOString(),
-          escola_id: escolaId
+          escola_id: escolaId,
+          ano_letivo: null
         })
         .select()
         .single();
