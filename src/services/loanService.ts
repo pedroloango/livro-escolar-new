@@ -403,7 +403,7 @@ export const getLoansByBook = async (bookId: string): Promise<Loan[]> => {
 };
 
 // Optimized function to get dashboard statistics
-export const getDashboardStats = async (): Promise<{
+export const getDashboardStats = async (anoFilter?: string): Promise<{
   totalStudents: number;
   totalBooks: number;
   activeLoans: number;
@@ -439,6 +439,11 @@ export const getDashboardStats = async (): Promise<{
         loansQuery = loansQuery.eq('escola_id', escolaId);
       }
       
+      // Apply ano filter on the emprestimos.ano_letivo column if provided
+      if (anoFilter) {
+        loansQuery = loansQuery.ilike('ano_letivo', `%${anoFilter}%`);
+      }
+      
       const { data: loans, error: loansError } = await loansQuery;
       
       if (loansError) {
@@ -457,11 +462,10 @@ export const getDashboardStats = async (): Promise<{
 
     const loans = allLoans;
     
-    // Get students count
+    // Get students count (optionally filtered by ano_letivo)
     let studentsQuery = supabase.from('alunos').select('*', { count: 'exact', head: true });
-    if (escolaId) {
-      studentsQuery = studentsQuery.eq('escola_id', escolaId);
-    }
+    if (escolaId) studentsQuery = studentsQuery.eq('escola_id', escolaId);
+    if (anoFilter) studentsQuery = studentsQuery.ilike('ano_letivo', `%${anoFilter}%`);
     const { count: totalStudents, error: studentsError } = await studentsQuery;
     
     if (studentsError) {
@@ -481,10 +485,10 @@ export const getDashboardStats = async (): Promise<{
       throw booksError;
     }
     
-    // Get storytelling count using dedicated service
+    // Get storytelling count using dedicated service (apply anoFilter)
     let totalStorytellings = 0;
     try {
-      totalStorytellings = await getStorytellingCount();
+      totalStorytellings = await getStorytellingCount(anoFilter);
     } catch (storytellingError) {
       console.error('Erro ao contar contações de histórias:', storytellingError);
       console.log('Continuando sem dados de storytelling...');

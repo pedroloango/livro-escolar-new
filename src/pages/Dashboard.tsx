@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getDashboardStats } from '@/services/loanService';
+import { getStudentYears } from '@/services/studentService';
 import { getStorytellingsByProfessional, getStorytellingsBySerieTurma, getAllStorytellingsCount } from '@/services/storytellingService';
 import { Link } from 'react-router-dom';
 import { Book, Users, BookMarked, ArrowDownToLine, BookOpen } from 'lucide-react';
@@ -22,6 +23,14 @@ import {
   Title,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 ChartJS.register(
   CategoryScale,
@@ -37,6 +46,8 @@ ChartJS.register(
 );
 
 export default function Dashboard() {
+  const [anoFilter, setAnoFilter] = useState<string>('all');
+  const [anos, setAnos] = useState<string[]>([]);
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalBooks: 0,
@@ -58,12 +69,36 @@ export default function Dashboard() {
   const [storytellingPorSerieTurma, setStorytellingPorSerieTurma] = useState<any>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
 
-  // Use cache for dashboard data with 2 minutes TTL
+  // Use cache for dashboard data with 2 minutes TTL, include anoFilter in key
+  const cacheKey = `dashboard-stats-${anoFilter}`;
   const { data: dashboardData, loading: dashboardLoading, refetch } = useCache(
-    'dashboard-stats',
-    getDashboardStats,
+    cacheKey,
+    () => getDashboardStats(anoFilter === 'all' ? undefined : anoFilter),
     { ttl: 2 * 60 * 1000, enabled: !authLoading && isAuthenticated }
   );
+
+  // Load years for the filter
+  useEffect(() => {
+    const loadYears = async () => {
+      try {
+        const studentYears = await getStudentYears();
+        let storytellingYears: string[] = [];
+        try {
+          // getStorytellingYears may return years present in contacao_historias
+          const { getStorytellingYears } = await import('@/services/storytellingService');
+          storytellingYears = await getStorytellingYears();
+        } catch (err) {
+          console.warn('getStorytellingYears not available or failed:', err);
+        }
+
+        const combined = Array.from(new Set([...studentYears, ...storytellingYears])).sort((a, b) => Number(a) - Number(b));
+        setAnos(combined);
+      } catch (err) {
+        console.error('Erro ao carregar anos letivos:', err);
+      }
+    };
+    if (!authLoading && isAuthenticated) loadYears();
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
     if (dashboardData) {
@@ -154,12 +189,12 @@ export default function Dashboard() {
   useEffect(() => {
     const loadStorytellingData = async () => {
       try {
-        // Primeiro, verificar o total de registros na tabela
-        const totalCount = await getAllStorytellingsCount();
+        // Primeiro, verificar o total de registros na tabela (aplicando filtro de ano)
+        const totalCount = await getAllStorytellingsCount(anoFilter === 'all' ? undefined : anoFilter);
         setDebugInfo(`Total na tabela: ${totalCount} registros`);
         
-        // Gráfico de rosca - Contação por Profissional
-        const profissionalData = await getStorytellingsByProfessional();
+        // Gráfico de rosca - Contação por Profissional (aplicando filtro de ano)
+        const profissionalData = await getStorytellingsByProfessional(anoFilter === 'all' ? undefined : anoFilter);
         const profissionalLabels = Object.keys(profissionalData);
         const profissionalValues = Object.values(profissionalData);
         
@@ -176,8 +211,8 @@ export default function Dashboard() {
           ],
         });
 
-        // Gráfico de barra - Contação por Série/Turma - Ordenado por valores decrescentes
-        const serieTurmaData = await getStorytellingsBySerieTurma();
+        // Gráfico de barra - Contação por Série/Turma - Ordenado por valores decrescentes (aplicando filtro de ano)
+        const serieTurmaData = await getStorytellingsBySerieTurma(anoFilter === 'all' ? undefined : anoFilter);
         const serieTurmaEntries = Object.entries(serieTurmaData);
         const sortedSerieTurma = serieTurmaEntries.sort((a, b) => b[1] - a[1]);
         const serieTurmaLabels = sortedSerieTurma.map(([label]) => label);
@@ -203,7 +238,7 @@ export default function Dashboard() {
     if (isAuthenticated && !authLoading) {
       loadStorytellingData();
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, anoFilter]);
 
   return (
     <DashboardLayout>
@@ -215,6 +250,25 @@ export default function Dashboard() {
             : 'Bem-vindo Usuário ao Sistema de Controle de Empréstimos de Livros!'
           }
         </p>
+
+        <div className="flex items-center gap-4">
+          <div className="w-48">
+            <Label htmlFor="dashboard-ano-filter">Ano Letivo</Label>
+            <Select value={anoFilter} onValueChange={setAnoFilter}>
+              <SelectTrigger id="dashboard-ano-filter">
+                <SelectValue placeholder="Todos os anos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {anos.map((ano) => (
+                  <SelectItem key={ano} value={ano}>
+                    {ano}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         {/* Debug Info */}
         {debugInfo && (

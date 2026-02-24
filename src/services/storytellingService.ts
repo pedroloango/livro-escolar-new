@@ -83,7 +83,7 @@ export async function deleteStorytelling(id: string): Promise<void> {
 }
 
 // Função para buscar dados de storytelling por profissional
-export async function getStorytellingsByProfessional(): Promise<Record<string, number>> {
+export async function getStorytellingsByProfessional(anoFilter?: string): Promise<Record<string, number>> {
   try {
     console.log('getStorytellingsByProfessional - Buscando dados...');
     
@@ -94,14 +94,20 @@ export async function getStorytellingsByProfessional(): Promise<Record<string, n
     let hasMore = true;
 
     while (hasMore) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('contacao_historias')
         .select(`
           profissional_id,
-          professor:professores!profissional_id(nome)
+          professor:professores!profissional_id(nome),
+          ano_letivo
         `)
         .range(from, from + batchSize - 1);
       
+      if (anoFilter) {
+        query = query.ilike('ano_letivo', `%${anoFilter}%`);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
       if (data && data.length > 0) {
@@ -130,7 +136,7 @@ export async function getStorytellingsByProfessional(): Promise<Record<string, n
 }
 
 // Função para buscar dados de storytelling por série e turma
-export async function getStorytellingsBySerieTurma(): Promise<Record<string, number>> {
+export async function getStorytellingsBySerieTurma(anoFilter?: string): Promise<Record<string, number>> {
   try {
     console.log('getStorytellingsBySerieTurma - Buscando dados...');
     
@@ -141,11 +147,15 @@ export async function getStorytellingsBySerieTurma(): Promise<Record<string, num
     let hasMore = true;
 
     while (hasMore) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('contacao_historias')
-        .select('serie, turma')
+        .select('serie, turma, ano_letivo')
         .range(from, from + batchSize - 1);
+      if (anoFilter) {
+        query = query.ilike('ano_letivo', `%${anoFilter}%`);
+      }
       
+      const { data, error } = await query;
       if (error) throw error;
 
       if (data && data.length > 0) {
@@ -173,13 +183,17 @@ export async function getStorytellingsBySerieTurma(): Promise<Record<string, num
 }
 
 // Função para buscar contagem total de storytelling
-export async function getStorytellingCount(): Promise<number> {
+export async function getStorytellingCount(anoFilter?: string): Promise<number> {
   try {
     console.log('getStorytellingCount - Contando registros...');
     
-    const { count, error } = await supabase
+    let query = supabase
       .from('contacao_historias')
       .select('*', { count: 'exact', head: true });
+    if (anoFilter) {
+      query = query.ilike('ano_letivo', `%${anoFilter}%`);
+    }
+    const { count, error } = await query;
     
     if (error) throw error;
     
@@ -192,11 +206,13 @@ export async function getStorytellingCount(): Promise<number> {
 }
 
 // Função de teste para verificar todos os registros
-export async function getAllStorytellingsCount(): Promise<number> {
+export async function getAllStorytellingsCount(anoFilter?: string): Promise<number> {
   try {
-    const { count, error } = await supabase
+    let query = supabase
       .from('contacao_historias')
       .select('*', { count: 'exact', head: true });
+    if (anoFilter) query = query.ilike('ano_letivo', `%${anoFilter}%`);
+    const { count, error } = await query;
     
     if (error) throw error;
     
@@ -225,3 +241,47 @@ export async function getAllStorytellings(): Promise<Storytelling[]> {
     throw error;
   }
 } 
+
+// Buscar anos letivos distintos das contações
+export async function getStorytellingYears(): Promise<string[]> {
+  try {
+    let all: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('contacao_historias')
+        .select('ano_letivo')
+        .range(from, from + batchSize - 1);
+
+      if (error) {
+        console.error('Erro ao buscar anos de contação:', error);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        all = all.concat(data);
+        from += batchSize;
+        hasMore = data.length === batchSize;
+      } else {
+        hasMore = false;
+      }
+    }
+
+    const years = Array.from(
+      new Set(
+        all
+          .map((r: any) => r.ano_letivo)
+          .filter(Boolean)
+          .map((v: any) => String(v).trim())
+      )
+    ).sort((a, b) => Number(a) - Number(b));
+
+    return years;
+  } catch (error) {
+    console.error('Erro em getStorytellingYears:', error);
+    throw error;
+  }
+}
