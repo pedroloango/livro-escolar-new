@@ -86,32 +86,33 @@ export function SidebarContent() {
 
   return (
     <div className="flex flex-col h-full">
-      <Link to="/dashboard" className="flex items-center gap-2 px-4 py-6">
-        <BookOpen className="h-6 w-6 text-primary" />
-        <div className="text-xl font-semibold text-primary">Biblioteca</div>
+      <Link to="/dashboard" className="flex items-center gap-2 px-3 py-4 border-b border-border/40">
+        <BookOpen className="h-5 w-5 text-primary shrink-0" />
+        <span className="text-sm font-semibold text-primary truncate">Biblioteca</span>
       </Link>
       <ScrollArea className="flex-1 px-2">
-        <div className="grid gap-1 p-2">
+        <nav className="grid gap-0.5 p-2 py-3" aria-label="Menu principal">
           {filteredLinks.map((link) => (
             <Link key={link.href} to={link.href}>
               <Button
                 variant="ghost"
+                size="sm"
                 className={cn(
-                  "w-full justify-start gap-2",
-                  pathname === link.href && "bg-accent text-accent-foreground"
+                  "w-full justify-start gap-2 h-9 text-muted-foreground hover:text-foreground",
+                  pathname === link.href && "bg-muted text-foreground font-medium"
                 )}
               >
-                <link.icon className="h-5 w-5" />
-                {link.title}
+                <link.icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{link.title}</span>
               </Button>
             </Link>
           ))}
-        </div>
+        </nav>
       </ScrollArea>
-      <div className="p-4 mt-auto">
+      <div className="p-2 mt-auto border-t border-border/40">
         <Link to="/help">
-          <Button variant="outline" className="w-full justify-start gap-2">
-            <HelpCircle className="h-5 w-5" />
+          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 h-9 text-muted-foreground">
+            <HelpCircle className="h-4 w-4 shrink-0" aria-hidden />
             Ajuda
           </Button>
         </Link>
@@ -123,7 +124,7 @@ export function SidebarContent() {
 // Componente principal da barra lateral
 export function Sidebar() {
   return (
-    <div className="fixed left-0 top-16 z-20 hidden h-[calc(100vh-4rem)] w-64 border-r bg-background md:block">
+    <div className="fixed left-0 top-14 z-20 hidden h-[calc(100vh-3.5rem)] w-56 border-r border-border/40 bg-background shadow-sm md:block">
       <SidebarContent />
     </div>
   );

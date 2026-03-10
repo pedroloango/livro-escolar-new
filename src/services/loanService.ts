@@ -27,8 +27,15 @@ async function populateLoan(loan: Loan): Promise<Loan> {
   };
 }
 
-// Optimized function to get loans with JOINs to avoid N+1 queries
-async function getLoansWithJoins(escolaId?: string, limit?: number, offset?: number): Promise<Loan[]> {
+export type LoanFilters = { ano_letivo?: string; serie?: string; turma?: string; status?: string };
+
+// Optimized function to get loans with JOINs and optional filters
+async function getLoansWithJoins(
+  escolaId?: string,
+  limit?: number,
+  offset?: number,
+  filters?: LoanFilters
+): Promise<Loan[]> {
   let query = supabase
     .from('emprestimos')
     .select(`
@@ -37,51 +44,70 @@ async function getLoansWithJoins(escolaId?: string, limit?: number, offset?: num
       livro:livros(*)
     `)
     .order('data_retirada', { ascending: false });
-  
-  if (escolaId) {
-    query = query.eq('escola_id', escolaId);
-  }
-  
-  if (limit) {
+
+  if (escolaId) query = query.eq('escola_id', escolaId);
+  if (filters?.ano_letivo) query = query.eq('ano_letivo', filters.ano_letivo);
+  if (filters?.serie) query = query.eq('serie', filters.serie);
+  if (filters?.turma) query = query.eq('turma', filters.turma);
+  if (filters?.status) query = query.eq('status', filters.status);
+
+  if (limit != null && offset != null) {
+    query = query.range(offset, offset + limit - 1);
+  } else if (limit) {
     query = query.limit(limit);
   }
-  
-  if (offset) {
-    query = query.range(offset, offset + (limit || 50) - 1);
-  }
-  
+
   const { data, error } = await query;
-  
   if (error) {
     console.error('Erro ao buscar empréstimos com JOINs:', error);
     throw error;
   }
-  
   return data || [];
 }
 
-export const getLoans = async (limit?: number, offset?: number): Promise<Loan[]> => {
+export const getLoans = async (limit?: number, offset?: number, filters?: LoanFilters): Promise<Loan[]> => {
   try {
-    // Obter o usuário atual para filtrar por escola_id
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
-    
-    // Use optimized function with JOINs
-    return await getLoansWithJoins(escolaId, limit, offset);
+    return await getLoansWithJoins(escolaId, limit, offset, filters);
   } catch (error) {
     console.error('Erro ao obter empréstimos:', error);
     throw error;
   }
 };
 
+/** Opções para filtros (anos, séries, turmas) sem carregar todos os empréstimos */
+export const getLoanFilterOptions = async (): Promise<{ years: string[]; series: string[]; turmas: string[] }> => {
+  try {
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    let q = supabase.from('emprestimos').select('ano_letivo, serie, turma').limit(2000);
+    if (escolaId) q = q.eq('escola_id', escolaId);
+    const { data, error } = await q;
+    if (error) throw error;
+    const rows = data || [];
+    const years = Array.from(new Set(rows.map((r: { ano_letivo?: string }) => r.ano_letivo).filter(Boolean).map(String))).sort((a, b) => Number(a) - Number(b));
+    const series = Array.from(new Set(rows.map((r: { serie?: string }) => r.serie).filter(Boolean).map(String))).sort();
+    const turmas = Array.from(new Set(rows.map((r: { turma?: string }) => r.turma).filter(Boolean).map(String))).sort();
+    return { years, series, turmas };
+  } catch (error) {
+    console.error('Erro ao buscar opções de filtro de empréstimos:', error);
+    return { years: [], series: [], turmas: [] };
+  }
+};
+
 // Get total count of loans (for pagination)
-export const getLoansCount = async (): Promise<number> => {
+export const getLoansCount = async (filters?: LoanFilters): Promise<number> => {
   try {
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
 
     let query = supabase.from('emprestimos').select('*', { count: 'exact', head: true });
     if (escolaId) query = query.eq('escola_id', escolaId);
+    if (filters?.ano_letivo) query = query.eq('ano_letivo', filters.ano_letivo);
+    if (filters?.serie) query = query.eq('serie', filters.serie);
+    if (filters?.turma) query = query.eq('turma', filters.turma);
+    if (filters?.status) query = query.eq('status', filters.status);
 
     const { count, error } = await query;
     if (error) {
@@ -201,33 +227,40 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
         throw professorError;
       }
 
-      // Criar registro na tabela de alunos com os dados do professor
+      const serieNum = parseInt(String(loan.serie || '0'), 10);
+      const serie = Number.isNaN(serieNum) ? 0 : Math.max(0, serieNum);
+      const turma = (loan.turma && String(loan.turma).trim()) || 'PROF';
+      const turno = (loan.turno && String(loan.turno).trim()) || 'PROF';
+      const dataNascimento = new Date().toISOString().split('T')[0]; // date-only para coluna date
+      const anoLetivo = String(new Date().getFullYear()); // evita NOT NULL em ano_letivo
+
+      // Criar registro na tabela de alunos com os dados do professor (synthetic aluno para FK)
       const { data: professorAluno, error: professorAlunoError } = await supabase
         .from('alunos')
         .insert({
           nome: professor.nome,
-          serie: parseInt(loan.serie || '0'),
-          turma: loan.turma || 'PROF',
-          turno: loan.turno || 'PROF',
+          serie,
+          turma,
+          turno,
           sexo: 'N/A',
-          data_nascimento: new Date().toISOString(),
-          escola_id: escolaId,
-          ano_letivo: null
+          data_nascimento: dataNascimento,
+          escola_id: escolaId ?? undefined,
+          ano_letivo: anoLetivo,
         })
         .select()
         .single();
 
       if (professorAlunoError) {
-        console.error('Erro ao criar registro de professor:', professorAlunoError);
+        console.error('Erro ao criar registro de professor (alunos):', professorAlunoError);
         throw professorAlunoError;
       }
 
-      loanData.professor_id = loan.professor_id;
       loanData.aluno_id = professorAluno.id;
-      // Adicionar campos do professor
-      if (loan.serie) loanData.serie = loan.serie;
-      if (loan.turma) loanData.turma = loan.turma;
-      if (loan.turno) loanData.turno = loan.turno;
+      loanData.professor_id = loan.professor_id;
+      loanData.serie = String(serie);
+      loanData.turma = turma;
+      loanData.turno = turno;
+      loanData.ano_letivo = anoLetivo;
     }
     
     const { data, error } = await supabase

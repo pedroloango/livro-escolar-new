@@ -2,34 +2,67 @@ import { Book } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
 
-export const getBooks = async (): Promise<Book[]> => {
+/** Busca livros com paginação. Sem limit/offset retorna todos (evitar em telas iniciais). */
+export const getBooks = async (limit?: number, offset?: number): Promise<Book[]> => {
   try {
-    // Obter o usuário atual para filtrar por escola_id
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
-    
-    // Buscar todos os livros usando range para evitar limite padrão
+
+    if (limit != null && offset != null) {
+      // Paginação: buscar só a página e calcular estoque só desses livros
+      let query = supabase
+        .from('livros')
+        .select('*')
+        .range(offset, offset + limit - 1)
+        .order('titulo', { ascending: true });
+      if (escolaId) query = query.eq('escola_id', escolaId);
+      const { data: booksData, error } = await query;
+      if (error) throw error;
+      if (!booksData?.length) return [];
+
+      const ids = booksData.map((b: { id: string }) => b.id);
+      let loansQuery = supabase
+        .from('emprestimos')
+        .select('livro_id, quantidade_retirada, quantidade_devolvida')
+        .in('livro_id', ids)
+        .in('status', ['Emprestado', 'Pendente']);
+      if (escolaId) loansQuery = loansQuery.eq('escola_id', escolaId);
+      const { data: activeLoans, error: loansError } = await loansQuery;
+      if (loansError) throw loansError;
+
+      const loanedByBook: Record<string, number> = {};
+      (activeLoans || []).forEach((loan: { livro_id: string; quantidade_retirada?: number; quantidade_devolvida?: number }) => {
+        const livroId = loan.livro_id;
+        const retirada = loan.quantidade_retirada || 0;
+        const devolvida = loan.quantidade_devolvida || 0;
+        if (!loanedByBook[livroId]) loanedByBook[livroId] = 0;
+        loanedByBook[livroId] += retirada - devolvida;
+      });
+
+      return booksData.map((book: Record<string, unknown> & { id: string }) => {
+        const quantidadeTotal = (book.quantidade_total as number) || 1;
+        const quantidadeEmprestadaReal = loanedByBook[book.id] || 0;
+        const quantidadeDisponivelReal = Math.max(0, quantidadeTotal - quantidadeEmprestadaReal);
+        return {
+          ...book,
+          quantidade_total: quantidadeTotal,
+          quantidade_disponivel: quantidadeDisponivelReal,
+          quantidade_emprestada: quantidadeEmprestadaReal,
+        } as Book;
+      });
+    }
+
+    // Comportamento legado: buscar todos (usar só quando necessário, ex: exportar)
     let allBooks: any[] = [];
     let from = 0;
     const batchSize = 1000;
     let hasMore = true;
-
     while (hasMore) {
       let query = supabase.from('livros').select('*').range(from, from + batchSize - 1);
-      
-      // Se o usuário tem uma escola associada, filtrar por essa escola
-      if (escolaId) {
-        query = query.eq('escola_id', escolaId);
-      }
-      
+      if (escolaId) query = query.eq('escola_id', escolaId);
       const { data, error } = await query;
-      
-      if (error) {
-        console.error('Erro ao buscar livros:', error);
-        throw error;
-      }
-
-      if (data && data.length > 0) {
+      if (error) throw error;
+      if (data?.length) {
         allBooks = allBooks.concat(data);
         from += batchSize;
         hasMore = data.length === batchSize;
@@ -37,64 +70,28 @@ export const getBooks = async (): Promise<Book[]> => {
         hasMore = false;
       }
     }
-
     const booksData = allBooks;
-
-    // Buscar empréstimos ativos para calcular estoque real
     let loansQuery = supabase
       .from('emprestimos')
       .select('livro_id, quantidade_retirada, quantidade_devolvida, status')
       .in('status', ['Emprestado', 'Pendente']);
-    
-    if (escolaId) {
-      loansQuery = loansQuery.eq('escola_id', escolaId);
-    }
-
+    if (escolaId) loansQuery = loansQuery.eq('escola_id', escolaId);
     const { data: activeLoans, error: loansError } = await loansQuery;
-
-    if (loansError) {
-      console.error('Erro ao buscar empréstimos ativos:', loansError);
-      throw loansError;
-    }
-
-    // Calcular estoque emprestado por livro
+    if (loansError) throw loansError;
     const loanedByBook: Record<string, number> = {};
     (activeLoans || []).forEach(loan => {
       const livroId = loan.livro_id;
       const retirada = loan.quantidade_retirada || 0;
       const devolvida = loan.quantidade_devolvida || 0;
-      const emprestado = retirada - devolvida;
-      
-      if (!loanedByBook[livroId]) {
-        loanedByBook[livroId] = 0;
-      }
-      loanedByBook[livroId] += emprestado;
+      if (!loanedByBook[livroId]) loanedByBook[livroId] = 0;
+      loanedByBook[livroId] += retirada - devolvida;
     });
-    
-    // Garantir que todos os livros tenham campos de quantidade com valores reais
-    const booksWithStock = booksData.map(book => {
+    return booksData.map(book => {
       const quantidadeTotal = book.quantidade_total || 1;
       const quantidadeEmprestadaReal = loanedByBook[book.id] || 0;
       const quantidadeDisponivelReal = Math.max(0, quantidadeTotal - quantidadeEmprestadaReal);
-
-      return {
-        ...book,
-        quantidade_total: quantidadeTotal,
-        quantidade_disponivel: quantidadeDisponivelReal,
-        quantidade_emprestada: quantidadeEmprestadaReal
-      };
+      return { ...book, quantidade_total: quantidadeTotal, quantidade_disponivel: quantidadeDisponivelReal, quantidade_emprestada: quantidadeEmprestadaReal };
     });
-    
-    console.log('getBooks Debug:', { 
-      totalBooks: booksWithStock.length, 
-      escolaId,
-      activeLoansCount: (activeLoans || []).length,
-      booksWithLoans: Object.keys(loanedByBook).length,
-      sampleBook: booksWithStock[0],
-      batchInfo: `Carregados ${booksData.length} livros em lotes de ${batchSize}`
-    });
-    
-    return booksWithStock;
   } catch (error) {
     console.error('Erro ao buscar livros:', error);
     throw error;

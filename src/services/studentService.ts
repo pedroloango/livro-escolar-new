@@ -3,47 +3,57 @@ import { Student } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
 
-export const getStudents = async (filters?: { ano_letivo?: string; serie?: number; turma?: string; turno?: string }): Promise<Student[]> => {
+export type StudentFilters = { ano_letivo?: string; serie?: number; turma?: string; turno?: string; nome?: string };
+
+export const getStudents = async (
+  filters?: StudentFilters,
+  limit?: number,
+  offset?: number
+): Promise<Student[]> => {
   try {
-    // Obter o usuário atual para filtrar por escola_id
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
-    
-    // Create a query
-    let query = supabase.from('alunos').select('*');
-    
-    // Se o usuário tem uma escola associada, filtrar por essa escola
-    if (escolaId) {
-      query = query.eq('escola_id', escolaId);
+
+    let query = supabase.from('alunos').select('*').order('nome', { ascending: true });
+
+    if (escolaId) query = query.eq('escola_id', escolaId);
+    if (filters?.ano_letivo) query = query.ilike('ano_letivo', `%${filters.ano_letivo}%`);
+    if (typeof filters?.serie !== 'undefined') query = query.eq('serie', filters.serie);
+    if (filters?.turma) query = query.eq('turma', filters.turma);
+    if (filters?.turno) query = query.eq('turno', filters.turno);
+    if (filters?.nome?.trim()) query = query.ilike('nome', `%${filters.nome.trim()}%`);
+
+    if (limit != null && offset != null) {
+      query = query.range(offset, offset + limit - 1);
     }
-    
-    // Apply filters if provided
-    if (filters) {
-      if (filters.ano_letivo) {
-        // Use ilike to be tolerant to formatting differences (e.g., "2026", "2026 ", "2026-...").
-        query = query.ilike('ano_letivo', `%${filters.ano_letivo}%`);
-      }
-      if (typeof filters.serie !== 'undefined') {
-        query = query.eq('serie', filters.serie);
-      }
-      if (filters.turma) {
-        query = query.eq('turma', filters.turma);
-      }
-      if (filters.turno) {
-        query = query.eq('turno', filters.turno);
-      }
-    }
-    
+
     const { data, error } = await query;
-    
-    if (error) {
-      console.error('Erro ao buscar alunos:', error);
-      throw error;
-    }
-    
+    if (error) throw error;
     return data || [];
   } catch (error) {
     console.error('Erro ao buscar alunos:', error);
+    throw error;
+  }
+};
+
+export const getStudentsCount = async (filters?: StudentFilters): Promise<number> => {
+  try {
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+
+    let query = supabase.from('alunos').select('*', { count: 'exact', head: true });
+    if (escolaId) query = query.eq('escola_id', escolaId);
+    if (filters?.ano_letivo) query = query.ilike('ano_letivo', `%${filters.ano_letivo}%`);
+    if (typeof filters?.serie !== 'undefined') query = query.eq('serie', filters.serie);
+    if (filters?.turma) query = query.eq('turma', filters.turma);
+    if (filters?.turno) query = query.eq('turno', filters.turno);
+    if (filters?.nome?.trim()) query = query.ilike('nome', `%${filters.nome.trim()}%`);
+
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  } catch (error) {
+    console.error('Erro ao contar alunos:', error);
     throw error;
   }
 };
@@ -131,6 +141,36 @@ export const deleteStudent = async (id: string): Promise<void> => {
   if (error) {
     console.error('Erro ao deletar aluno:', error);
     throw error;
+  }
+};
+
+export const getStudentTurmas = async (): Promise<string[]> => {
+  try {
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    let query = supabase.from('alunos').select('turma').not('turma', 'is', null).limit(500);
+    if (escolaId) query = query.eq('escola_id', escolaId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return Array.from(new Set((data || []).map((r: { turma: string }) => r.turma).filter(Boolean))).sort();
+  } catch (error) {
+    console.error('Erro ao buscar turmas:', error);
+    return [];
+  }
+};
+
+export const getStudentTurnos = async (): Promise<string[]> => {
+  try {
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    let query = supabase.from('alunos').select('turno').not('turno', 'is', null).limit(500);
+    if (escolaId) query = query.eq('escola_id', escolaId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return Array.from(new Set((data || []).map((r: { turno: string }) => r.turno).filter(Boolean))).sort();
+  } catch (error) {
+    console.error('Erro ao buscar turnos:', error);
+    return [];
   }
 };
 

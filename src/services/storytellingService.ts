@@ -195,6 +195,8 @@ export async function getStorytellingCount(anoFilter?: string): Promise<number> 
     }
     const { count, error } = await query;
     
+    console.log('getStorytellingCount - anoFilter:', anoFilter, 'count:', count);
+
     if (error) throw error;
     
     console.log(`getStorytellingCount - Total encontrado: ${count}`);

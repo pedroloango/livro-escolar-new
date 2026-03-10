@@ -35,12 +35,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
+const BOOKS_PAGE_SIZE = 50;
+
 export default function Books() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [books, setBooks] = useState<Book[]>([]);
   const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [titleFilter, setTitleFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedBarcode, setScannedBarcode] = useState('');
   const [bookInfo, setBookInfo] = useState<any>(null);
@@ -60,12 +65,17 @@ export default function Books() {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      fetchBooks();
       fetchBooksCount();
       fetchStockSummary();
       checkFields();
     }
   }, [authLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      fetchBooks();
+    }
+  }, [authLoading, isAuthenticated, currentPage]);
 
   useEffect(() => {
     // Aplicar filtro por título
@@ -96,7 +106,7 @@ export default function Books() {
       if (success) {
         toast.success('Campos de quantidade criados com sucesso!');
         setFieldsExist(true);
-        // Recarregar os dados
+        await fetchBooksCount();
         await fetchBooks();
         await fetchStockSummary();
       } else {
@@ -113,7 +123,8 @@ export default function Books() {
   const fetchBooks = async () => {
     try {
       setLoading(true);
-      const data = await getBooks();
+      const offset = (currentPage - 1) * BOOKS_PAGE_SIZE;
+      const data = await getBooks(BOOKS_PAGE_SIZE, offset);
       setBooks(data);
       setFilteredBooks(data);
     } catch (error) {
@@ -128,6 +139,8 @@ export default function Books() {
     try {
       const count = await getBooksCount();
       setTotalBooks(count);
+      setTotalCount(count);
+      setTotalPages(Math.max(1, Math.ceil(count / BOOKS_PAGE_SIZE)));
     } catch (error) {
       console.error('Failed to fetch books count:', error);
     }
@@ -164,6 +177,8 @@ export default function Books() {
     try {
       await deleteBook(id);
       setBooks(books.filter(book => book.id !== id));
+      setFilteredBooks(prev => prev.filter(book => book.id !== id));
+      setTotalCount(prev => Math.max(0, prev - 1));
       toast.success('Livro excluído com sucesso');
     } catch (error) {
       console.error('Failed to delete book:', error);
@@ -444,8 +459,8 @@ export default function Books() {
                 Escanear Código de Barras
               </Button>
             </div>
-            <div className="mt-4 mb-2 text-right text-muted-foreground text-sm">
-              Total de livros cadastrados: <span className="font-bold text-primary">{totalBooks}</span>
+            <div className="mt-4 mb-2 flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-sm">
+              <span>Total: <span className="font-bold text-primary">{totalBooks}</span> livros · Página {currentPage} de {totalPages}</span>
             </div>
             <DataTable
               columns={columns}
@@ -453,6 +468,29 @@ export default function Books() {
               searchKey="titulo"
               searchPlaceholder="Buscar por título..."
             />
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm text-muted-foreground px-2">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                >
+                  Próxima
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

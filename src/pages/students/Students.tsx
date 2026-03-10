@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { getStudents, deleteStudent, getStudentYears } from '@/services/studentService';
+import { getStudents, deleteStudent, getStudentYears, getStudentsCount, getStudentTurmas, getStudentTurnos } from '@/services/studentService';
 import { Student } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
 import { ColumnDef } from '@tanstack/react-table';
@@ -27,9 +27,12 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import AnoLetivoFilter from '@/components/common/AnoLetivoFilter';
 import { Input } from '@/components/ui/input';
 import StudentsImport from '@/components/students/StudentsImport';
 import { useAuth } from '@/contexts/AuthContext';
+
+const STUDENTS_PAGE_SIZE = 50;
 
 export default function Students() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -40,76 +43,58 @@ export default function Students() {
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
   const [anoFilter, setAnoFilter] = useState<string>('all');
   const [nameFilter, setNameFilter] = useState<string>('');
-  const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [anos, setAnos] = useState<string[]>([]);
+  const [turmas, setTurmas] = useState<string[]>([]);
+  const [turnos, setTurnos] = useState<string[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      // Fetch students from server, applying anoFilter server-side for accuracy
-      fetchStudents();
+      Promise.all([getStudentYears(), getStudentTurmas(), getStudentTurnos()])
+        .then(([years, tmas, tnos]) => {
+          setAnos(years);
+          setTurmas(tmas);
+          setTurnos(tnos);
+        })
+        .catch(err => console.error('Erro ao carregar opções de filtro:', err));
     }
-  }, [authLoading, isAuthenticated, anoFilter]);
+  }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
-    // Apply filters when students or any filter changes
-    let result = [...students];
-    
-    // Apply name filter
-    if (nameFilter) {
-      result = result.filter(student => 
-        student.nome.toLowerCase().includes(nameFilter.toLowerCase())
-      );
+    if (!authLoading && isAuthenticated) {
+      fetchStudents();
     }
-    
-    // Apply serie filter
-    if (serieFilter && serieFilter !== 'all') {
-      result = result.filter(student => 
-        student.serie.toString() === serieFilter
-      );
-    }
-    
-    // Apply turma filter
-    if (turmaFilter && turmaFilter !== 'all') {
-      result = result.filter(student => 
-        student.turma === turmaFilter
-      );
-    }
-    
-    // Apply turno filter
-    if (turnoFilter && turnoFilter !== 'all') {
-      result = result.filter(student => 
-        student.turno === turnoFilter
-      );
-    }
+  }, [authLoading, isAuthenticated, anoFilter, serieFilter, turmaFilter, turnoFilter, nameFilter, currentPage]);
 
-    // Apply ano letivo filter
-    if (anoFilter && anoFilter !== 'all') {
-      result = result.filter(student =>
-        String(student.ano_letivo || '') === anoFilter
-      );
-    }
-    
-    setFilteredStudents(result);
-  }, [students, nameFilter, serieFilter, turmaFilter, turnoFilter, anoFilter]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [anoFilter, serieFilter, turmaFilter, turnoFilter, nameFilter]);
+
+  const buildFilters = () => {
+    const f: { ano_letivo?: string; serie?: number; turma?: string; turno?: string; nome?: string } = {};
+    if (anoFilter && anoFilter !== 'all') f.ano_letivo = anoFilter;
+    if (serieFilter && serieFilter !== 'all') f.serie = parseInt(serieFilter, 10);
+    if (turmaFilter && turmaFilter !== 'all') f.turma = turmaFilter;
+    if (turnoFilter && turnoFilter !== 'all') f.turno = turnoFilter;
+    if (nameFilter.trim()) f.nome = nameFilter.trim();
+    return Object.keys(f).length ? f : undefined;
+  };
 
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const data = await getStudents(anoFilter && anoFilter !== 'all' ? { ano_letivo: anoFilter } : undefined);
+      const filters = buildFilters();
+      const offset = (currentPage - 1) * STUDENTS_PAGE_SIZE;
+      const [data, count] = await Promise.all([
+        getStudents(filters, STUDENTS_PAGE_SIZE, offset),
+        getStudentsCount(filters),
+      ]);
       setStudents(data);
-      setFilteredStudents(data);
-      // fetch distinct years from DB
-      try {
-        const years = await getStudentYears();
-        setAnos(years);
-      } catch (err) {
-        console.error('Erro ao buscar anos letivos do banco:', err);
-        // fallback to compute from students if the DB call fails
-        const fallback = Array.from(new Set(data.map(s => s.ano_letivo ? String(s.ano_letivo) : null).filter(Boolean)))
-          .sort((a, b) => Number(a) - Number(b));
-        setAnos(fallback);
-      }
+      setTotalCount(count);
+      setTotalPages(Math.max(1, Math.ceil(count / STUDENTS_PAGE_SIZE)));
     } catch (error) {
       console.error('Failed to fetch students:', error);
       toast.error('Erro ao carregar alunos');
@@ -118,23 +103,12 @@ export default function Students() {
     }
   };
   
-  // Debug: log counts for ano_letivo investigation
-  useEffect(() => {
-    if (students.length > 0) {
-      const total = students.length;
-      const anosMap: Record<string, number> = {};
-      students.forEach(s => {
-        const key = s.ano_letivo ? String(s.ano_letivo).trim() : 'NULL';
-        anosMap[key] = (anosMap[key] || 0) + 1;
-      });
-      console.info('Students debug - total:', total, 'anos distribution:', anosMap);
-    }
-  }, [students]);
 
   const handleDelete = async (id: string) => {
     try {
       await deleteStudent(id);
       setStudents(students.filter(student => student.id !== id));
+      setTotalCount(c => Math.max(0, c - 1));
       toast.success('Aluno excluído com sucesso');
     } catch (error) {
       console.error('Failed to delete student:', error);
@@ -231,11 +205,6 @@ export default function Students() {
     .sort((a, b) => a - b)
     .map(serie => serie.toString());
 
-  // Obter turmas únicas para o filtro
-  const turmas = Array.from(new Set(students.map(student => student.turma))).sort();
-
-  // Obter turnos únicos para o filtro
-  const turnos = Array.from(new Set(students.map(student => student.turno)));
   
   // 'anos' agora vem do estado carregado diretamente do banco (getStudentYears)
 
@@ -327,30 +296,34 @@ export default function Students() {
               </div>
               
               <div className="w-full md:w-32">
-                <Label htmlFor="ano-filter">Ano Letivo</Label>
-                <Select
+                <AnoLetivoFilter
                   value={anoFilter}
                   onValueChange={setAnoFilter}
-                >
-                  <SelectTrigger id="ano-filter">
-                    <SelectValue placeholder="Ano Letivo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {anos.map((ano) => (
-                      <SelectItem key={ano} value={ano}>
-                        {ano}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  years={anos}
+                  id="ano-filter"
+                  placeholder="Ano Letivo"
+                />
               </div>
             </div>
 
+            <div className="text-sm text-muted-foreground mb-2">
+              Total: <span className="font-semibold">{totalCount}</span> alunos · Página {currentPage} de {totalPages}
+            </div>
             <DataTable
               columns={columns}
-              data={filteredStudents}
+              data={students}
             />
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}>
+                  Anterior
+                </Button>
+                <span className="text-sm text-muted-foreground px-2">Página {currentPage} de {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>
+                  Próxima
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

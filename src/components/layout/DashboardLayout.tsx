@@ -24,12 +24,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-muted/30">
       <NavBar />
       <div className="flex">
         <Sidebar />
-        <main className="md:pl-64 w-full py-8 px-4 container max-w-7xl fade-in-animation">
-          {children}
+        <main className="w-full flex-1 md:ml-56 py-6 px-4 sm:px-6 lg:px-8 fade-in-animation">
+          <div className="max-w-[1600px] mx-auto">
+            {children}
+          </div>
         </main>
       </div>
     </div>

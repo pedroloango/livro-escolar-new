@@ -35,6 +35,7 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
   const [maxDevolvida, setMaxDevolvida] = useState<number>(1);
   const [filteredLoans, setFilteredLoans] = useState<Loan[]>([]);
   const [scannedBookId, setScannedBookId] = useState<string | null>(null);
+  const [barcodeInput, setBarcodeInput] = useState('');
 
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm({
     defaultValues: {
@@ -122,6 +123,104 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
     }
   };
 
+  const handleBarcodeLookup = async () => {
+    const code = barcodeInput?.trim();
+    if (!code) {
+      toast.error('Digite o código de barras');
+      return;
+    }
+    try {
+      const book = await findBookByBarcode(code);
+      if (book && book.id) {
+        const loansOfThisBook = activeLoans.filter(loan => loan.livro_id === book.id);
+        
+        if (loansOfThisBook.length === 0) {
+          toast.error('Nenhum empréstimo ativo encontrado para este livro');
+          return;
+        }
+        
+        setScannedBookId(book.id);
+        setFilteredLoans(loansOfThisBook);
+        
+        if (loansOfThisBook.length === 1) {
+          setValue('loanId', loansOfThisBook[0].id || '');
+          toast.success(`Empréstimo encontrado: ${loansOfThisBook[0].aluno?.nome} - ${book.titulo}`);
+        } 
+        else {
+          toast.info(`Encontrados ${loansOfThisBook.length} empréstimos para este livro. Selecione um.`);
+        }
+      } else {
+        toast.error('Livro não encontrado com este código de barras');
+      }
+    } catch (error) {
+      console.error('Error finding loan by book barcode:', error);
+      toast.error('Erro ao buscar empréstimo por código de barras');
+    }
+  };
+
+  // Detect scanner USB input as keyboard and auto-search
+  useEffect(() => {
+    let buffer = '';
+    let lastTime = 0;
+    const INTER_CHAR_THRESHOLD = 50;
+    const CLEAR_DELAY = 200;
+    let clearTimer: number | undefined;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+      const dt = now - lastTime;
+      lastTime = now;
+
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+
+      if (e.key.length === 1) {
+        e.preventDefault();
+        buffer += e.key;
+        if (clearTimer) window.clearTimeout(clearTimer);
+        clearTimer = window.setTimeout(() => { buffer = ''; }, CLEAR_DELAY);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const code = buffer.trim();
+        buffer = '';
+        if (clearTimer) window.clearTimeout(clearTimer);
+        if (code.length > 0) {
+          (async () => {
+            try {
+              const book = await findBookByBarcode(code);
+              if (book && book.id) {
+                const loansOfThisBook = activeLoans.filter(loan => loan.livro_id === book.id);
+                if (loansOfThisBook.length === 0) {
+                  toast.error('Nenhum empréstimo ativo encontrado para este livro');
+                  return;
+                }
+                setScannedBookId(book.id);
+                setFilteredLoans(loansOfThisBook);
+                if (loansOfThisBook.length === 1) {
+                  setValue('loanId', loansOfThisBook[0].id || '');
+                  toast.success(`Empréstimo encontrado: ${loansOfThisBook[0].aluno?.nome} - ${book.titulo}`);
+                } else {
+                  toast.info(`Encontrados ${loansOfThisBook.length} empréstimos para este livro. Selecione um.`);
+                }
+                setBarcodeInput(code);
+              } else {
+                toast.error('Livro não encontrado com este código de barras');
+              }
+            } catch (err) {
+              console.error('Erro ao buscar por código de barras (scanner):', err);
+              toast.error('Erro ao buscar empréstimo por código de barras');
+            }
+          })();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      if (clearTimer) window.clearTimeout(clearTimer);
+    };
+  }, [activeLoans, setValue]);
+
   const onFormSubmit = (data: { loanId: string, data_devolucao: string, quantidade_devolvida: number }) => {
     if (!selectedLoan) return;
     
@@ -163,7 +262,7 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="loanId">Empréstimo</Label>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 items-start">
               <div className="flex-1">
                 <Select
                   value={watchLoanId}
@@ -182,18 +281,32 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
                   </SelectContent>
                 </Select>
               </div>
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="icon" 
-                onClick={() => {
-                  setIsScannerOpen(true);
-                  setScannedBookId(null);
-                  setFilteredLoans(activeLoans);
-                }}
-              >
-                <Barcode className="h-5 w-5" />
-              </Button>
+
+              <div className="flex flex-col gap-2 w-56">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Código de barras"
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value)}
+                  />
+                  <Button type="button" variant="outline" onClick={handleBarcodeLookup}>
+                    Buscar
+                  </Button>
+                </div>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => {
+                    setIsScannerOpen(true);
+                    setScannedBookId(null);
+                    setFilteredLoans(activeLoans);
+                  }}
+                >
+                  <Barcode className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
             {errors.loanId && <p className="text-red-500 text-sm">{errors.loanId.message}</p>}
           </div>
@@ -203,6 +316,11 @@ export default function ReturnForm({ onSubmit, onCancel, isSubmitting, initialLo
               <h3 className="font-medium mb-2">Detalhes do Empréstimo</h3>
               <p><span className="font-medium">Aluno:</span> {selectedLoan.aluno?.nome}</p>
               <p><span className="font-medium">Livro:</span> {selectedLoan.livro?.titulo}</p>
+              <p>
+                <span className="font-medium">Série:</span> {selectedLoan.aluno?.serie ?? '—'}{' '}
+                <span className="font-medium ml-2">Turma:</span> {selectedLoan.aluno?.turma ?? '—'}{' '}
+                <span className="font-medium ml-2">Turno:</span> {selectedLoan.aluno?.turno ?? '—'}
+              </p>
               <p><span className="font-medium">Data de Retirada:</span> {format(parseISO(selectedLoan.data_retirada), 'dd/MM/yyyy')}</p>
               <p><span className="font-medium">Quantidade Total:</span> {selectedLoan.quantidade_retirada}</p>
               

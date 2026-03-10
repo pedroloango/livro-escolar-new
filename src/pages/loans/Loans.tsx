@@ -4,25 +4,17 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, ArrowDownToLine, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { getLoans, deleteLoan, getLoansCount } from '@/services/loanService';
+import { getLoans, deleteLoan, getLoansCount, getLoanFilterOptions } from '@/services/loanService';
 import { Loan } from '@/types';
 import { DataTable } from '@/components/ui/data-table';
 import { ColumnDef } from '@tanstack/react-table';
 import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Pagination } from '@/components/ui/pagination';
 import { LoadingSkeleton } from '@/components/ui/loading-skeleton';
+import LoansFilterBar from '@/components/loans/LoansFilterBar';
 
 interface LoansProps {
   returnMode?: boolean;
@@ -37,162 +29,57 @@ export default function Loans({
 }: LoansProps) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filteredLoans, setFilteredLoans] = useState<Loan[]>([]);
-  const [allLoans, setAllLoans] = useState<Loan[]>([]); // Todos os empréstimos para filtros
-  const [pagesCache, setPagesCache] = useState<Record<number, Loan[]>>({});
-  const [loadingAllLoans, setLoadingAllLoans] = useState(false); // Loading para busca completa
-  const [exporting, setExporting] = useState(false); // Loading para exportação
+  const [exporting, setExporting] = useState(false);
   const [studentFilter, setStudentFilter] = useState('');
   const [bookFilter, setBookFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [anoFilter, setAnoFilter] = useState('');
   const [serieFilter, setSerieFilter] = useState('');
   const [turmaFilter, setTurmaFilter] = useState('');
-  const navigate = useNavigate();
-  
-  // Get unique series and turmas from loans
-  const getUniqueSeries = () => {
-    const series = [...new Set(allLoans.map(loan => loan.aluno?.serie).filter(Boolean))];
-    return series.sort();
-  };
-  
-  const getUniqueTurmas = () => {
-    const turmas = [...new Set(allLoans.map(loan => loan.aluno?.turma).filter(Boolean))];
-    return turmas.sort();
-  };
-  
-  const getUniqueYears = () => {
-    const years = [...new Set(allLoans.map(loan => loan.aluno?.ano_letivo).filter(Boolean))];
-    return years.sort();
-  };
+  const [filterOptions, setFilterOptions] = useState<{ years: string[]; series: string[]; turmas: string[] }>({ years: [], series: [], turmas: [] });
+  const [loadingAllLoans, setLoadingAllLoans] = useState(false);
+  const [allLoans, setAllLoans] = useState<Loan[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loanToDelete, setLoanToDelete] = useState<Loan | null>(null);
-  
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const itemsPerPage = 50;
+  const navigate = useNavigate();
+
+  const serverFilters = () => {
+    const f: { ano_letivo?: string; serie?: string; turma?: string; status?: string } = {};
+    if (anoFilter && anoFilter !== 'all') f.ano_letivo = anoFilter;
+    if (serieFilter && serieFilter !== 'all') f.serie = serieFilter;
+    if (turmaFilter && turmaFilter !== 'all') f.turma = turmaFilter;
+    if (statusFilter && statusFilter !== 'all') f.status = statusFilter;
+    return Object.keys(f).length ? f : undefined;
+  };
+
+  useEffect(() => {
+    getLoanFilterOptions().then(setFilterOptions);
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [anoFilter, serieFilter, turmaFilter, statusFilter]);
 
   useEffect(() => {
     fetchLoans();
-  }, [currentPage]);
-
-  useEffect(() => {
-    // Apply filters to existing data without refetching
-    applyFilters();
-  }, [studentFilter, bookFilter, statusFilter, serieFilter, turmaFilter, anoFilter, allLoans]);
-
-  const applyFilters = () => {
-    let filteredData = allLoans;
-    
-    if (studentFilter) {
-      filteredData = filteredData.filter(loan => 
-        loan.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase())
-      );
-    }
-    
-    if (bookFilter) {
-      filteredData = filteredData.filter(loan => 
-        loan.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase())
-      );
-    }
-    
-    if (statusFilter && statusFilter !== 'all') {
-      filteredData = filteredData.filter(loan => loan.status === statusFilter);
-    }
-    
-    if (serieFilter && serieFilter !== 'all') {
-      filteredData = filteredData.filter(loan => 
-        loan.aluno?.serie === serieFilter
-      );
-    }
-    
-    if (turmaFilter && turmaFilter !== 'all') {
-      filteredData = filteredData.filter(loan => 
-        loan.aluno?.turma === turmaFilter
-      );
-    }
-    
-    if (anoFilter && anoFilter !== 'all') {
-      filteredData = filteredData.filter(loan =>
-        String(loan.aluno?.ano_letivo || '').toLowerCase().includes(String(anoFilter).toLowerCase().trim())
-      );
-    }
-    
-    setFilteredLoans(filteredData);
-  };
-
-  const fetchAllLoans = async () => {
-    try {
-      setLoadingAllLoans(true);
-      console.log('Iniciando busca de todos os empréstimos...');
-      let allData: Loan[] = [];
-      let page = 0;
-      const pageSize = 1000; // Tamanho da página para buscar
-      let hasMore = true;
-
-      while (hasMore) {
-        const offset = page * pageSize;
-        console.log(`Buscando página ${page + 1}, offset: ${offset}`);
-        
-        const data = await getLoans(pageSize, offset);
-        console.log(`Página ${page + 1}: ${data.length} empréstimos encontrados`);
-        
-        if (data.length === 0) {
-          hasMore = false;
-        } else {
-          allData = [...allData, ...data];
-          page++;
-          
-          // Se retornou menos que o pageSize, não há mais dados
-          if (data.length < pageSize) {
-            hasMore = false;
-          }
-        }
-      }
-
-      console.log(`Total de empréstimos carregados: ${allData.length}`);
-      setAllLoans(allData);
-    } catch (error) {
-      console.error('Failed to fetch all loans:', error);
-      toast.error('Erro ao carregar dados para filtros');
-    } finally {
-      setLoadingAllLoans(false);
-    }
-  };
+  }, [currentPage, anoFilter, serieFilter, turmaFilter, statusFilter]);
 
   const fetchLoans = async () => {
     try {
       setLoading(true);
       const offset = (currentPage - 1) * itemsPerPage;
-      // Use cached page if available
-      if (pagesCache[currentPage]) {
-        const cached = pagesCache[currentPage];
-        setLoans(cached);
-        // If first page ensure allLoans is loaded for filters
-        if (currentPage === 1 && allLoans.length === 0) {
-          await fetchAllLoans();
-        }
-      } else {
-        const data = await getLoans(itemsPerPage, offset);
-        setLoans(data);
-        setPagesCache(prev => ({ ...prev, [currentPage]: data }));
-      }
-      
-      // Se é a primeira página, também buscar todos os empréstimos para filtros
-      if (currentPage === 1) {
-        await fetchAllLoans();
-      }
-      // Fetch total count once to set pagination correctly
-      try {
-        const count = await getLoansCount();
-        setTotalCount(count);
-        setTotalPages(Math.ceil(count / itemsPerPage));
-      } catch (err) {
-        // fallback: estimate based on current data length if count fails
-        console.error('Erro ao obter contagem total de empréstimos:', err);
-      }
+      const filters = serverFilters();
+      const [data, count] = await Promise.all([
+        getLoans(itemsPerPage, offset, filters),
+        getLoansCount(filters),
+      ]);
+      setLoans(data);
+      setTotalCount(count);
+      setTotalPages(Math.max(1, Math.ceil(count / itemsPerPage)));
     } catch (error) {
       console.error('Failed to fetch loans:', error);
       toast.error('Erro ao carregar empréstimos');
@@ -200,6 +87,45 @@ export default function Loans({
       setLoading(false);
     }
   };
+
+  const fetchAllLoans = async () => {
+    try {
+      setLoadingAllLoans(true);
+      let allData: Loan[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      const filters = serverFilters();
+      let hasMore = true;
+      while (hasMore) {
+        const data = await getLoans(pageSize, page * pageSize, filters);
+        if (!data.length) break;
+        allData = [...allData, ...data];
+        page++;
+        if (data.length < pageSize) break;
+      }
+      setAllLoans(allData);
+    } catch (error) {
+      console.error('Failed to fetch all loans:', error);
+      toast.error('Erro ao carregar dados');
+    } finally {
+      setLoadingAllLoans(false);
+    }
+  };
+
+  const applyFilters = () => {
+    let data = allLoans;
+    if (studentFilter) data = data.filter(l => l.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase()));
+    if (bookFilter) data = data.filter(l => l.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase()));
+    if (statusFilter && statusFilter !== 'all') data = data.filter(l => l.status === statusFilter);
+    if (serieFilter && serieFilter !== 'all') data = data.filter(l => l.aluno?.serie === serieFilter);
+    if (turmaFilter && turmaFilter !== 'all') data = data.filter(l => l.aluno?.turma === turmaFilter);
+    if (anoFilter && anoFilter !== 'all') data = data.filter(l => String(l.aluno?.ano_letivo || '').toLowerCase().includes(String(anoFilter).toLowerCase().trim()));
+    return data;
+  };
+
+  const getUniqueYears = () => filterOptions.years;
+  const getUniqueSeries = () => filterOptions.series;
+  const getUniqueTurmas = () => filterOptions.turmas;
 
   const handleReturnClick = (loan: Loan) => {
     if (returnMode && onSelectLoanForReturn) {
@@ -216,15 +142,13 @@ export default function Loans({
 
   const confirmDelete = async () => {
     if (!loanToDelete) return;
-    console.log('Tentando excluir empréstimo:', loanToDelete.id);
     try {
       await deleteLoan(loanToDelete.id!);
       toast.success('Empréstimo excluído com sucesso!');
       setDeleteDialogOpen(false);
       setLoanToDelete(null);
-      // Recarregar dados da página atual e todos os empréstimos
       await fetchLoans();
-      await fetchAllLoans();
+      if (allLoans.length) fetchAllLoans();
     } catch (error) {
       toast.error('Erro ao excluir empréstimo');
     }
@@ -235,64 +159,20 @@ export default function Loans({
       setExporting(true);
       toast.info('Buscando todos os empréstimos filtrados...');
       
-      // Buscar TODOS os empréstimos do servidor (sem limite de paginação)
+      const filters = serverFilters();
       let allFilteredData: Loan[] = [];
       let page = 0;
-      const pageSize = 1000; // Tamanho da página para buscar
+      const pageSize = 1000;
       let hasMore = true;
-
       while (hasMore) {
-        const offset = page * pageSize;
-        const data = await getLoans(pageSize, offset);
-        
-        if (data.length === 0) {
-          hasMore = false;
-        } else {
-          // Aplicar os mesmos filtros que estão na interface
-          let filteredPage = data;
-          
-          if (studentFilter) {
-            filteredPage = filteredPage.filter(loan => 
-              loan.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase())
-            );
-          }
-          
-          if (bookFilter) {
-            filteredPage = filteredPage.filter(loan => 
-              loan.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase())
-            );
-          }
-          
-          if (statusFilter && statusFilter !== 'all') {
-            filteredPage = filteredPage.filter(loan => loan.status === statusFilter);
-          }
-          
-          if (serieFilter && serieFilter !== 'all') {
-            filteredPage = filteredPage.filter(loan => 
-              loan.aluno?.serie === serieFilter
-            );
-          }
-          
-          if (turmaFilter && turmaFilter !== 'all') {
-            filteredPage = filteredPage.filter(loan => 
-              loan.aluno?.turma === turmaFilter
-            );
-          }
-          
-          if (anoFilter && anoFilter !== 'all') {
-            filteredPage = filteredPage.filter(loan =>
-              String(loan.aluno?.ano_letivo || '').toLowerCase().includes(String(anoFilter).toLowerCase().trim())
-            );
-          }
-          
-          allFilteredData = [...allFilteredData, ...filteredPage];
-          page++;
-          
-          // Se retornou menos que o pageSize, não há mais dados
-          if (data.length < pageSize) {
-            hasMore = false;
-          }
-        }
+        const data = await getLoans(pageSize, page * pageSize, filters);
+        if (!data.length) break;
+        let filteredPage = data;
+        if (studentFilter) filteredPage = filteredPage.filter(l => l.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase()));
+        if (bookFilter) filteredPage = filteredPage.filter(l => l.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase()));
+        allFilteredData = [...allFilteredData, ...filteredPage];
+        page++;
+        if (data.length < pageSize) break;
       }
 
       if (allFilteredData.length === 0) {
@@ -469,171 +349,45 @@ export default function Loans({
             <LoadingSkeleton type="table" />
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-                <div>
-                  <Label htmlFor="student-filter">Aluno</Label>
-                  <Input
-                    id="student-filter"
-                    placeholder="Buscar por aluno..."
-                    value={studentFilter}
-                    onChange={(e) => setStudentFilter(e.target.value)}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="book-filter">Livro</Label>
-                  <Input
-                    id="book-filter"
-                    placeholder="Buscar por livro..."
-                    value={bookFilter}
-                    onChange={(e) => setBookFilter(e.target.value)}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="status-filter">Status</Label>
-                  <Select
-                    value={statusFilter}
-                    onValueChange={setStatusFilter}
-                  >
-                    <SelectTrigger id="status-filter">
-                      <SelectValue placeholder="Todos os status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="Emprestado">Emprestado</SelectItem>
-                      <SelectItem value="Pendente">Pendente</SelectItem>
-                      <SelectItem value="Devolvido">Devolvido</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              
-              <div>
-                <Label htmlFor="ano-filter">Ano Letivo</Label>
-                <Select
-                  value={anoFilter}
-                  onValueChange={setAnoFilter}
-                >
-                  <SelectTrigger id="ano-filter">
-                    <SelectValue placeholder="Todos os anos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {getUniqueYears().map((ano) => (
-                      <SelectItem key={String(ano)} value={String(ano)}>
-                        {String(ano)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-                
-                <div>
-                  <Label htmlFor="serie-filter">Série</Label>
-                  <Select
-                    value={serieFilter}
-                    onValueChange={setSerieFilter}
-                  >
-                    <SelectTrigger id="serie-filter">
-                      <SelectValue placeholder="Todas as séries" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todas</SelectItem>
-                      {getUniqueSeries().map(serie => (
-                        <SelectItem key={serie} value={serie}>{serie}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="turma-filter">Turma</Label>
-                  <Select
-                    value={turmaFilter}
-                    onValueChange={setTurmaFilter}
-                  >
-                    <SelectTrigger id="turma-filter">
-                      <SelectValue placeholder="Todas as turmas" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todas</SelectItem>
-                      {getUniqueTurmas().map(turma => (
-                        <SelectItem key={turma} value={turma}>{turma}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Indicador de carregamento de todos os empréstimos */}
-              {loadingAllLoans && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-                    <div className="text-sm text-yellow-800">
-                      <strong>Carregando todos os empréstimos...</strong> Isso pode levar alguns segundos para grandes volumes de dados.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Botão para recarregar todos os empréstimos */}
-              {!loadingAllLoans && allLoans.length > 0 && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-green-800">
-                      <strong>Dados completos carregados:</strong> {allLoans.length} empréstimos disponíveis para filtros
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={fetchAllLoans}
-                      disabled={loadingAllLoans}
-                    >
-                      {loadingAllLoans ? 'Carregando...' : 'Recarregar Todos'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Indicador de filtros aplicados */}
-              {(studentFilter || bookFilter || statusFilter !== '' || serieFilter !== '' || turmaFilter !== '' || anoFilter !== '') && !loadingAllLoans && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-blue-800">
-                      <strong>Filtros aplicados:</strong> Mostrando {filteredLoans.length} de {allLoans.length} empréstimos
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => {
-                        setStudentFilter('');
-                        setBookFilter('');
-                        setStatusFilter('');
-                        setSerieFilter('');
-                        setTurmaFilter('');
-                        setAnoFilter('');
-                      }}
-                    >
-                      Limpar Filtros
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <LoansFilterBar
+                studentFilter={studentFilter}
+                setStudentFilter={setStudentFilter}
+                bookFilter={bookFilter}
+                setBookFilter={setBookFilter}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                anoFilter={anoFilter}
+                setAnoFilter={setAnoFilter}
+                serieFilter={serieFilter}
+                setSerieFilter={setSerieFilter}
+                turmaFilter={turmaFilter}
+                setTurmaFilter={setTurmaFilter}
+                uniqueYears={getUniqueYears()}
+                uniqueSeries={getUniqueSeries()}
+                uniqueTurmas={getUniqueTurmas()}
+                loadingAllLoans={loadingAllLoans}
+                allLoansCount={totalCount}
+                filteredCount={loans.length}
+                onFetchAll={fetchAllLoans}
+                onClearFilters={() => {
+                  setStudentFilter('');
+                  setBookFilter('');
+                  setStatusFilter('');
+                  setSerieFilter('');
+                  setTurmaFilter('');
+                  setAnoFilter('');
+                }}
+                gridClass="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4"
+              />
 
               <DataTable
                 columns={columns}
-                data={filteredLoans.slice(0, itemsPerPage)}
+                data={loans}
               />
               
-              {filteredLoans.length > itemsPerPage && (
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    Mostrando {Math.min(itemsPerPage, filteredLoans.length)} de {filteredLoans.length} empréstimos filtrados
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Total de empréstimos: {allLoans.length}
-                  </div>
+              {totalCount > itemsPerPage && (
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Mostrando {loans.length} de {totalCount} empréstimos</span>
                 </div>
               )}
             </>
@@ -650,103 +404,36 @@ export default function Loans({
         <LoadingSkeleton type="table" />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <Label htmlFor="student-filter">Aluno</Label>
-              <Input
-                id="student-filter"
-                placeholder="Buscar por aluno..."
-                value={studentFilter}
-                onChange={(e) => setStudentFilter(e.target.value)}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="book-filter">Livro</Label>
-              <Input
-                id="book-filter"
-                placeholder="Buscar por livro..."
-                value={bookFilter}
-                onChange={(e) => setBookFilter(e.target.value)}
-              />
-            </div>
-            
-            <div>
-              <Label htmlFor="status-filter">Status</Label>
-              <Select
-                value={statusFilter}
-                onValueChange={setStatusFilter}
-              >
-                <SelectTrigger id="status-filter">
-                  <SelectValue placeholder="Todos os status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="Emprestado">Emprestado</SelectItem>
-                  <SelectItem value="Pendente">Pendente</SelectItem>
-                  <SelectItem value="Devolvido">Devolvido</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <Label htmlFor="ano-filter">Ano Letivo</Label>
-              <Select
-                value={anoFilter}
-                onValueChange={setAnoFilter}
-              >
-                <SelectTrigger id="ano-filter">
-                  <SelectValue placeholder="Todos os anos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {getUniqueYears().map((ano) => (
-                    <SelectItem key={String(ano)} value={String(ano)}>
-                      {String(ano)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <Label htmlFor="serie-filter">Série</Label>
-              <Select
-                value={serieFilter}
-                onValueChange={setSerieFilter}
-              >
-                <SelectTrigger id="serie-filter">
-                  <SelectValue placeholder="Todas as séries" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  {getUniqueSeries().map(serie => (
-                    <SelectItem key={serie} value={serie}>{serie}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <Label htmlFor="turma-filter">Turma</Label>
-              <Select
-                value={turmaFilter}
-                onValueChange={setTurmaFilter}
-              >
-                <SelectTrigger id="turma-filter">
-                  <SelectValue placeholder="Todas as turmas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  {getUniqueTurmas().map(turma => (
-                    <SelectItem key={turma} value={turma}>{turma}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-                
-                
-          </div>
+          <LoansFilterBar
+            studentFilter={studentFilter}
+            setStudentFilter={setStudentFilter}
+            bookFilter={bookFilter}
+            setBookFilter={setBookFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            anoFilter={anoFilter}
+            setAnoFilter={setAnoFilter}
+            serieFilter={serieFilter}
+            setSerieFilter={setSerieFilter}
+            turmaFilter={turmaFilter}
+            setTurmaFilter={setTurmaFilter}
+            uniqueYears={getUniqueYears()}
+            uniqueSeries={getUniqueSeries()}
+            uniqueTurmas={getUniqueTurmas()}
+            loadingAllLoans={loadingAllLoans}
+            allLoansCount={totalCount}
+            filteredCount={loans.length}
+            onFetchAll={fetchAllLoans}
+            onClearFilters={() => {
+              setStudentFilter('');
+              setBookFilter('');
+              setStatusFilter('');
+              setSerieFilter('');
+              setTurmaFilter('');
+              setAnoFilter('');
+            }}
+            gridClass="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4"
+          />
 
           {/* Indicador de carregamento de todos os empréstimos */}
           {loadingAllLoans && (
@@ -761,11 +448,11 @@ export default function Loans({
           )}
 
           {/* Botão para recarregar todos os empréstimos */}
-          {!loadingAllLoans && allLoans.length > 0 && (
+          {!loadingAllLoans && totalCount > 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-green-800">
-                  <strong>Dados completos carregados:</strong> {allLoans.length} empréstimos disponíveis para filtros
+                  <strong>Total:</strong> {totalCount} empréstimos
                 </div>
                 <Button 
                   variant="outline" 
@@ -784,7 +471,7 @@ export default function Loans({
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-blue-800">
-                  <strong>Filtros aplicados:</strong> Mostrando {filteredLoans.length} de {allLoans.length} empréstimos
+                  <strong>Filtros aplicados:</strong> Mostrando {loans.length} de {totalCount} empréstimos
                 </div>
                 <Button 
                   variant="outline" 
@@ -805,19 +492,14 @@ export default function Loans({
 
           <DataTable
             columns={columns}
-            data={filteredLoans.slice(0, itemsPerPage)}
+            data={loans}
           />
           
-          {filteredLoans.length > itemsPerPage && (
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                Mostrando {Math.min(itemsPerPage, filteredLoans.length)} de {filteredLoans.length} empréstimos filtrados
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Total de empréstimos: {allLoans.length}
-              </div>
-            </div>
-          )}
+{totalCount > itemsPerPage && (
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Mostrando {loans.length} de {totalCount} empréstimos</span>
+                </div>
+              )}
         </>
       )}
       

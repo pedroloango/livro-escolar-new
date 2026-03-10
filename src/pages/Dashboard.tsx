@@ -23,14 +23,7 @@ import {
   Title,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
+import AnoLetivoFilter from '@/components/common/AnoLetivoFilter';
 
 ChartJS.register(
   CategoryScale,
@@ -109,6 +102,8 @@ export default function Dashboard() {
         totalLoans: dashboardData.totalLoans,
         totalStorytellings: dashboardData.totalStorytellings,
       });
+
+      console.log('Dashboard debug - anoFilter:', anoFilter, 'dashboardData.totalStorytellings:', dashboardData.totalStorytellings);
 
       // Gráfico de Empréstimos por Série/Turma (novo formato) - Ordenado por valores decrescentes
       const serieTurmaEntries = Object.entries(dashboardData.emprestimosPorSerieTurma);
@@ -253,20 +248,13 @@ export default function Dashboard() {
 
         <div className="flex items-center gap-4">
           <div className="w-48">
-            <Label htmlFor="dashboard-ano-filter">Ano Letivo</Label>
-            <Select value={anoFilter} onValueChange={setAnoFilter}>
-              <SelectTrigger id="dashboard-ano-filter">
-                <SelectValue placeholder="Todos os anos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {anos.map((ano) => (
-                  <SelectItem key={ano} value={ano}>
-                    {ano}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AnoLetivoFilter
+              value={anoFilter}
+              onValueChange={setAnoFilter}
+              years={anos}
+              id="dashboard-ano-filter"
+              placeholder="Todos os anos"
+            />
           </div>
         </div>
 

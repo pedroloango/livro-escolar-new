@@ -15,6 +15,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import AnoLetivoFilter from '@/components/common/AnoLetivoFilter';
 import { Barcode, Filter } from 'lucide-react';
 import { toast } from 'sonner';
 import BarcodeScanner from '@/components/common/BarcodeScanner';
@@ -37,6 +38,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const [filteredTeachers, setFilteredTeachers] = useState<Teacher[]>([]);
   const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
   const [bookSearch, setBookSearch] = useState('');
+  const [barcodeInput, setBarcodeInput] = useState('');
   const [serieFilter, setSerieFilter] = useState<string>('all');
   const [turmaFilter, setTurmaFilter] = useState<string>('all');
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
@@ -44,7 +46,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const [showFilters, setShowFilters] = useState(false);
   const [personType, setPersonType] = useState<'aluno' | 'professor'>('aluno');
 
-  const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<Loan>({
+  const { register, handleSubmit, formState: { errors }, setValue, watch, reset, setError, clearErrors } = useForm<Loan>({
     defaultValues: initialData || {
       aluno_id: '',
       professor_id: '',
@@ -66,10 +68,11 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const limit = 150;
         const [studentsData, teachersData, booksData] = await Promise.all([
-          getStudents(),
+          getStudents(undefined, limit, 0),
           getTeachers(),
-          getBooks()
+          getBooks(limit, 0)
         ]);
         setStudents(studentsData);
         setFilteredStudents(studentsData);
@@ -101,7 +104,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       result = result.filter(student => String(student.ano_letivo || '').toLowerCase().includes(anoFilter.toLowerCase().trim()));
     }
     setFilteredStudents(result);
-  }, [students, serieFilter, turmaFilter, turnoFilter]);
+  }, [students, serieFilter, turmaFilter, turnoFilter, anoFilter]);
 
   // Filtro para professores (pode ser expandido futuramente)
   useEffect(() => {
@@ -162,6 +165,91 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       toast.error('Erro ao buscar livro por código de barras');
     }
   };
+
+  const handleBarcodeLookup = async () => {
+    const code = barcodeInput?.trim();
+    if (!code) {
+      toast.error('Digite o código de barras');
+      return;
+    }
+    try {
+      const book = await findBookByBarcode(code);
+      if (book && book.id) {
+        setValue('livro_id', book.id, { shouldValidate: true });
+        setFilteredBooks((prev) => {
+          if (!prev.find(b => b.id === book.id)) {
+            return [book, ...prev];
+          }
+          return prev;
+        });
+        toast.success(`Livro selecionado: ${book.titulo}`);
+      } else {
+        toast.error('Livro não encontrado com este código de barras');
+      }
+    } catch (err) {
+      console.error('Erro ao buscar livro por código de barras:', err);
+      toast.error('Erro ao buscar livro por código de barras');
+    }
+  };
+
+  // Detectar scanner USB que emite como teclado e buscar automaticamente
+  useEffect(() => {
+    let buffer = '';
+    let lastTime = 0;
+    const INTER_CHAR_THRESHOLD = 50; // ms between chars to consider scanner input
+    const CLEAR_DELAY = 200; // ms to clear buffer if no Enter
+    let clearTimer: number | undefined;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+      const dt = now - lastTime;
+      lastTime = now;
+
+      // ignore modifier keys
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+
+      if (e.key.length === 1) {
+        // probably a character
+        e.preventDefault();
+        buffer += e.key;
+        if (clearTimer) window.clearTimeout(clearTimer);
+        clearTimer = window.setTimeout(() => { buffer = ''; }, CLEAR_DELAY);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const code = buffer.trim();
+        buffer = '';
+        if (clearTimer) window.clearTimeout(clearTimer);
+        if (code.length > 0) {
+          // perform lookup
+          (async () => {
+            try {
+              const book = await findBookByBarcode(code);
+              if (book && book.id) {
+                setValue('livro_id', book.id, { shouldValidate: true });
+                setFilteredBooks((prev) => {
+                  if (!prev.find(b => b.id === book.id)) return [book, ...prev];
+                  return prev;
+                });
+                setBarcodeInput(code);
+                toast.success(`Livro selecionado: ${book.titulo}`);
+              } else {
+                toast.error('Livro não encontrado com este código de barras');
+              }
+            } catch (err) {
+              console.error('Erro ao buscar por código de barras (scanner):', err);
+              toast.error('Erro ao buscar livro por código de barras');
+            }
+          })();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      if (clearTimer) window.clearTimeout(clearTimer);
+    };
+  }, [setValue, setFilteredBooks, setBarcodeInput, toast]);
 
   const series = Array.from(new Set(students.map(student => student.serie)))
     .sort((a, b) => a - b)
@@ -238,6 +326,22 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
         toast.error('Selecione um professor');
         return false;
       }
+      if (!data.turma?.trim()) {
+        setError('turma', { type: 'required', message: 'Turma é obrigatória' });
+        toast.error('Informe a turma');
+        return false;
+      }
+      if (!data.serie) {
+        setError('serie', { type: 'required', message: 'Série é obrigatória' });
+        toast.error('Selecione a série');
+        return false;
+      }
+      if (!data.turno?.trim()) {
+        setError('turno', { type: 'required', message: 'Turno é obrigatório' });
+        toast.error('Selecione o turno');
+        return false;
+      }
+      clearErrors(['turma', 'serie', 'turno']);
       // Limpar campo do aluno quando for professor
       setValue('aluno_id', '');
     }
@@ -367,13 +471,23 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                   {errors.serie && <p className="text-red-500 text-sm">Série é obrigatória</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="turma">Turma</Label>
-                  <Input
-                    id="turma"
-                    {...register('turma', { required: personType === 'professor' })}
-                    value={watch('turma') || ''}
-                    onChange={e => setValue('turma', e.target.value)}
-                  />
+                  <Label htmlFor="turma-professor">Turma</Label>
+                  <Select
+                    value={watch('turma') || undefined}
+                    onValueChange={v => {
+                      setValue('turma', v, { shouldValidate: true });
+                      clearErrors('turma');
+                    }}
+                  >
+                    <SelectTrigger id="turma-professor">
+                      <SelectValue placeholder="Selecione a turma" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {['A', 'B', 'C', 'D', 'E'].map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {errors.turma && <p className="text-red-500 text-sm">Turma é obrigatória</p>}
                 </div>
                 <div className="space-y-2">
@@ -459,25 +573,13 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="ano-filter">Ano Letivo</Label>
-                <Select
+                <AnoLetivoFilter
                   value={anoFilter}
                   onValueChange={setAnoFilter}
-                >
-                  <SelectTrigger id="ano-filter">
-                    <SelectValue placeholder="Filtrar por ano" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {Array.from(new Set(students.map(s => s.ano_letivo ? String(s.ano_letivo).trim() : null).filter(Boolean)))
-                      .sort((a,b) => Number(a) - Number(b))
-                      .map((ano) => (
-                        <SelectItem key={ano} value={ano}>
-                          {ano}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                  years={Array.from(new Set(students.map(s => s.ano_letivo ? String(s.ano_letivo).trim() : null).filter(Boolean))).sort((a, b) => Number(a) - Number(b))}
+                  id="ano-filter"
+                  placeholder="Filtrar por ano"
+                />
               </div>
             </div>
           )}
@@ -514,14 +616,27 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                     </SelectContent>
                   </Select>
                 </div>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setIsScannerOpen(true)}
-                >
-                  <Barcode className="h-5 w-5" />
-                </Button>
+                    <div className="flex flex-col gap-2 w-56">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          placeholder="Código de barras"
+                          value={barcodeInput}
+                          onChange={(e) => setBarcodeInput(e.target.value)}
+                        />
+                        <Button type="button" variant="outline" onClick={handleBarcodeLookup}>
+                          Buscar
+                        </Button>
+                      </div>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="icon" 
+                        onClick={() => setIsScannerOpen(true)}
+                      >
+                        <Barcode className="h-5 w-5" />
+                      </Button>
+                    </div>
               </div>
               {errors.livro_id && <p className="text-red-500 text-sm">Livro é obrigatório</p>}
             </div>
