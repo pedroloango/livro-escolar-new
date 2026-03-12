@@ -70,6 +70,40 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
     setValue('codigo_barras', barcode);
   };
 
+  // Suporte a leitor de código de barras USB (emula teclado)
+  useEffect(() => {
+    let buffer = '';
+    let clearTimer: number | undefined;
+    const CLEAR_DELAY = 200;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      // ignorar modificadores
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+
+      if (e.key.length === 1) {
+        // caractere normal vindo do leitor
+        buffer += e.key;
+        if (clearTimer) window.clearTimeout(clearTimer);
+        clearTimer = window.setTimeout(() => {
+          buffer = '';
+        }, CLEAR_DELAY);
+      } else if (e.key === 'Enter') {
+        const code = buffer.trim();
+        buffer = '';
+        if (clearTimer) window.clearTimeout(clearTimer);
+        if (code) {
+          setValue('codigo_barras', code);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      if (clearTimer) window.clearTimeout(clearTimer);
+    };
+  }, [setValue]);
+
   const handleFormSubmit = (data: Book) => {
     console.log('BookForm Debug - handleFormSubmit:', { 
       data, 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -126,6 +126,21 @@ export default function Loans({
   const getUniqueYears = () => filterOptions.years;
   const getUniqueSeries = () => filterOptions.series;
   const getUniqueTurmas = () => filterOptions.turmas;
+
+  const clientFilteredLoans = useMemo(() => {
+    let data = loans;
+    if (studentFilter) {
+      data = data.filter(l =>
+        l.aluno?.nome?.toLowerCase().includes(studentFilter.toLowerCase())
+      );
+    }
+    if (bookFilter) {
+      data = data.filter(l =>
+        l.livro?.titulo?.toLowerCase().includes(bookFilter.toLowerCase())
+      );
+    }
+    return data;
+  }, [loans, studentFilter, bookFilter]);
 
   const handleReturnClick = (loan: Loan) => {
     if (returnMode && onSelectLoanForReturn) {
@@ -367,7 +382,7 @@ export default function Loans({
                 uniqueTurmas={getUniqueTurmas()}
                 loadingAllLoans={loadingAllLoans}
                 allLoansCount={totalCount}
-                filteredCount={loans.length}
+                filteredCount={clientFilteredLoans.length}
                 onFetchAll={fetchAllLoans}
                 onClearFilters={() => {
                   setStudentFilter('');
@@ -382,17 +397,35 @@ export default function Loans({
 
               <DataTable
                 columns={columns}
-                data={loans}
+                data={clientFilteredLoans}
               />
               
               {totalCount > itemsPerPage && (
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>Mostrando {loans.length} de {totalCount} empréstimos</span>
+                  <span>Mostrando {clientFilteredLoans.length} de {totalCount} empréstimos</span>
                 </div>
               )}
             </>
           )}
         </div>
+
+        {/* Dialog de confirmação de exclusão - sempre renderizado */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar exclusão</DialogTitle>
+            </DialogHeader>
+            <p>Tem certeza que deseja excluir este empréstimo? Esta ação não poderá ser desfeita.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                Excluir
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DashboardLayout>
     );
   }
@@ -422,7 +455,7 @@ export default function Loans({
             uniqueTurmas={getUniqueTurmas()}
             loadingAllLoans={loadingAllLoans}
             allLoansCount={totalCount}
-            filteredCount={loans.length}
+            filteredCount={clientFilteredLoans.length}
             onFetchAll={fetchAllLoans}
             onClearFilters={() => {
               setStudentFilter('');
@@ -492,12 +525,12 @@ export default function Loans({
 
           <DataTable
             columns={columns}
-            data={loans}
+            data={clientFilteredLoans}
           />
           
-{totalCount > itemsPerPage && (
+          {totalCount > itemsPerPage && (
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>Mostrando {loans.length} de {totalCount} empréstimos</span>
+                  <span>Mostrando {clientFilteredLoans.length} de {totalCount} empréstimos</span>
                 </div>
               )}
         </>
