@@ -65,12 +65,28 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const watchTeacherId = watch('professor_id');
   const watchBookId = watch('livro_id');
 
+  const fetchAllStudents = async (): Promise<Student[]> => {
+    const allStudents: Student[] = [];
+    const batchSize = 1000;
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const batch = await getStudents(undefined, batchSize, offset);
+      allStudents.push(...batch);
+      hasMore = batch.length === batchSize;
+      offset += batchSize;
+    }
+
+    return allStudents;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         const limit = 150;
         const [studentsData, teachersData, booksData] = await Promise.all([
-          getStudents(undefined, limit, 0),
+          fetchAllStudents(),
           getTeachers(),
           getBooks(limit, 0)
         ]);
@@ -90,18 +106,19 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   }, []);
 
   useEffect(() => {
+    const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
     let result = [...students];
     if (serieFilter && serieFilter !== 'all') {
-      result = result.filter(student => student.serie.toString() === serieFilter);
+      result = result.filter(student => normalize(student.serie) === normalize(serieFilter));
     }
     if (turmaFilter && turmaFilter !== 'all') {
-      result = result.filter(student => student.turma === turmaFilter);
+      result = result.filter(student => normalize(student.turma) === normalize(turmaFilter));
     }
     if (turnoFilter && turnoFilter !== 'all') {
-      result = result.filter(student => student.turno === turnoFilter);
+      result = result.filter(student => normalize(student.turno) === normalize(turnoFilter));
     }
     if (anoFilter && anoFilter !== 'all') {
-      result = result.filter(student => String(student.ano_letivo || '').toLowerCase().includes(anoFilter.toLowerCase().trim()));
+      result = result.filter(student => normalize(student.ano_letivo) === normalize(anoFilter));
     }
     setFilteredStudents(result);
   }, [students, serieFilter, turmaFilter, turnoFilter, anoFilter]);

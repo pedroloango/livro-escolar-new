@@ -14,6 +14,9 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 export default function StorytellingNew() {
   const [teachers, setTeachers] = useState<any[]>([]);
   const [books, setBooks] = useState<any[]>([]);
+  const [filteredBooks, setFilteredBooks] = useState<any[]>([]);
+  const [bookSearch, setBookSearch] = useState('');
+  const [barcodeInput, setBarcodeInput] = useState('');
   const [form, setForm] = useState<Partial<Storytelling>>({});
   const [loading, setLoading] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -25,9 +28,26 @@ export default function StorytellingNew() {
       setTeachers(teachersData);
       const booksData = await getBooks();
       setBooks(booksData);
+      setFilteredBooks(booksData);
     }
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const searchTerm = bookSearch.trim().toLowerCase();
+    if (!searchTerm) {
+      setFilteredBooks(books);
+      return;
+    }
+
+    setFilteredBooks(
+      books.filter((book) =>
+        book.titulo?.toLowerCase().includes(searchTerm) ||
+        book.autor?.toLowerCase().includes(searchTerm) ||
+        book.editora?.toLowerCase().includes(searchTerm)
+      )
+    );
+  }, [bookSearch, books]);
 
   // Professores que NÃO fazem contação de histórias
   const professores = teachers.filter(t => !t.contacao_historias);
@@ -54,6 +74,14 @@ export default function StorytellingNew() {
           }
           return prev;
         });
+        setFilteredBooks(prev => {
+          if (!prev.find(b => b.id === book.id)) {
+            return [book, ...prev];
+          }
+          return prev;
+        });
+        setBarcodeInput(barcode);
+        setBookSearch('');
         setTimeout(() => {
           setForm(f => ({ ...f, livro_id: String(book.id) }));
         }, 0);
@@ -65,6 +93,70 @@ export default function StorytellingNew() {
       toast.error('Erro ao buscar livro por código de barras');
     }
   }
+
+  async function handleBarcodeLookup() {
+    const code = barcodeInput.trim();
+    if (!code) {
+      toast.error('Digite o código de barras');
+      return;
+    }
+    await handleBarcodeScan(code);
+  }
+
+  useEffect(() => {
+    let buffer = '';
+    let clearTimer: number | undefined;
+    let lastTime = 0;
+    const INTER_CHAR_THRESHOLD = 50;
+    const CLEAR_DELAY = 200;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTypingField = !!activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.getAttribute('contenteditable') === 'true'
+      );
+
+      if (isTypingField && activeElement?.id !== 'storytelling-barcode-input') {
+        return;
+      }
+
+      const now = Date.now();
+      const delta = now - lastTime;
+      lastTime = now;
+
+      if (event.key === 'Shift' || event.key === 'Control' || event.key === 'Alt' || event.key === 'Meta') {
+        return;
+      }
+
+      if (event.key.length === 1) {
+        if (delta > INTER_CHAR_THRESHOLD && buffer.length > 0) {
+          buffer = '';
+        }
+
+        buffer += event.key;
+        if (clearTimer) window.clearTimeout(clearTimer);
+        clearTimer = window.setTimeout(() => {
+          buffer = '';
+        }, CLEAR_DELAY);
+      } else if (event.key === 'Enter') {
+        const code = buffer.trim();
+        buffer = '';
+        if (clearTimer) window.clearTimeout(clearTimer);
+        if (!code) return;
+        event.preventDefault();
+        setBarcodeInput(code);
+        void handleBarcodeScan(code);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      if (clearTimer) window.clearTimeout(clearTimer);
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -129,23 +221,53 @@ export default function StorytellingNew() {
           <div>
             <label className="block mb-1 font-medium">Título do Livro</label>
             <div className="flex gap-2 items-center">
-              <Select
-                value={form.livro_id || ''}
-                onValueChange={value => setForm(f => ({ ...f, livro_id: value }))}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o livro ou use o leitor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {books.map(b => (
-                    <SelectItem key={b.id} value={b.id}>{b.titulo}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}>
-                <Barcode className="h-5 w-5" />
-              </Button>
+              <div className="flex-1 space-y-2">
+                <Input
+                  type="text"
+                  placeholder="Pesquisar livro por título, autor ou editora..."
+                  value={bookSearch}
+                  onChange={(e) => setBookSearch(e.target.value)}
+                />
+                <Select
+                  value={form.livro_id || ''}
+                  onValueChange={value => setForm(f => ({ ...f, livro_id: value }))}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o livro ou use o leitor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredBooks.map(b => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.titulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-64 space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    id="storytelling-barcode-input"
+                    type="text"
+                    placeholder="Código de barras"
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleBarcodeLookup();
+                      }
+                    }}
+                  />
+                  <Button type="button" variant="outline" onClick={() => void handleBarcodeLookup()}>
+                    Buscar
+                  </Button>
+                </div>
+                <Button type="button" variant="outline" size="icon" onClick={() => setIsScannerOpen(true)}>
+                  <Barcode className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
             <BarcodeScanner 
               isOpen={isScannerOpen}
