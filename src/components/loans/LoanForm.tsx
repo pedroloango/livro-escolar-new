@@ -218,6 +218,17 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
     let clearTimer: number | undefined;
 
     const onKeyDown = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTypingField = !!activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.getAttribute('contenteditable') === 'true'
+      );
+
+      if (isTypingField && activeElement?.id !== 'loan-barcode-input') {
+        return;
+      }
+
       const now = Date.now();
       const dt = now - lastTime;
       lastTime = now;
@@ -227,15 +238,20 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
 
       if (e.key.length === 1) {
         // probably a character
-        e.preventDefault();
+        if (dt > INTER_CHAR_THRESHOLD && buffer.length > 0) {
+          buffer = '';
+        }
         buffer += e.key;
         if (clearTimer) window.clearTimeout(clearTimer);
         clearTimer = window.setTimeout(() => { buffer = ''; }, CLEAR_DELAY);
       } else if (e.key === 'Enter') {
-        e.preventDefault();
         const code = buffer.trim();
+        const scannerLikeEnter = code.length > 0 || dt <= INTER_CHAR_THRESHOLD * 2;
         buffer = '';
         if (clearTimer) window.clearTimeout(clearTimer);
+        if (!scannerLikeEnter) return;
+        e.preventDefault();
+        e.stopPropagation();
         if (code.length > 0) {
           // perform lookup
           (async () => {
@@ -636,6 +652,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                     <div className="flex flex-col gap-2 w-56">
                       <div className="flex items-center gap-2">
                         <Input
+                          id="loan-barcode-input"
                           type="text"
                           placeholder="Código de barras"
                           value={barcodeInput}

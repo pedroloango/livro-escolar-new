@@ -142,10 +142,13 @@ export default function StorytellingNew() {
         }, CLEAR_DELAY);
       } else if (event.key === 'Enter') {
         const code = buffer.trim();
+        const scannerLikeEnter = code.length > 0 || delta <= INTER_CHAR_THRESHOLD * 2;
         buffer = '';
         if (clearTimer) window.clearTimeout(clearTimer);
-        if (!code) return;
+        if (!scannerLikeEnter) return;
         event.preventDefault();
+        event.stopPropagation();
+        if (!code) return;
         setBarcodeInput(code);
         void handleBarcodeScan(code);
       }
