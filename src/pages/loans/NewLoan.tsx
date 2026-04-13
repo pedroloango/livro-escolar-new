@@ -1,48 +1,56 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import LoanForm from '@/components/loans/LoanForm';
+import LoanForm, { LoanFormSubmitPayload } from '@/components/loans/LoanForm';
 import { Loan } from '@/types';
-import { createLoan } from '@/services/loanService';
+import { createLoan, createProfessorLoansBatch, createStudentLoansBatch } from '@/services/loanService';
 import { toast } from 'sonner';
 
 export default function NewLoan() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (data: Loan) => {
+  const handleSubmit = async ({ loan, selectedBooks, selectedStudentLoans }: LoanFormSubmitPayload) => {
     try {
       setIsSubmitting(true);
       
       // Validate required fields
-      if (!data.livro_id) {
+      if (!selectedStudentLoans?.length && !loan.livro_id) {
         toast.error('Selecione um livro');
         return;
       }
       
-      if (!data.aluno_id && !data.professor_id) {
+      if (!selectedStudentLoans?.length && !loan.aluno_id && !loan.professor_id) {
         toast.error('Selecione um aluno ou professor');
         return;
       }
       
-      if (!data.data_retirada) {
+      if (!loan.data_retirada) {
         toast.error('Data de retirada é obrigatória');
         return;
       }
       
-      if (!data.quantidade_retirada || data.quantidade_retirada < 1) {
+      if (!loan.quantidade_retirada || loan.quantidade_retirada < 1) {
         toast.error('Quantidade deve ser maior que zero');
         return;
       }
       
       // Ensure status is set
       const loanData: Loan = {
-        ...data,
+        ...loan,
         status: 'Emprestado' as const
       };
-      
-      await createLoan(loanData);
-      toast.success('Empréstimo registrado com sucesso!');
+
+      if (selectedStudentLoans && selectedStudentLoans.length > 0) {
+        await createStudentLoansBatch(loanData, selectedStudentLoans);
+        toast.success(`${selectedStudentLoans.length} empréstimos de alunos registrados com sucesso!`);
+      } else if (loanData.professor_id && selectedBooks && selectedBooks.length > 0) {
+        await createProfessorLoansBatch(loanData, selectedBooks);
+        toast.success(`${selectedBooks.length} empréstimos registrados com sucesso!`);
+      } else {
+        await createLoan(loanData);
+        toast.success('Empréstimo registrado com sucesso!');
+      }
       navigate('/loans');
     } catch (error) {
       console.error('Failed to create loan:', error);

@@ -285,6 +285,178 @@ export const createLoan = async (loan: Loan): Promise<Loan> => {
   }
 };
 
+export const createProfessorLoansBatch = async (
+  loan: Loan,
+  books: Array<{ bookId: string; quantity: number }>
+): Promise<Loan[]> => {
+  try {
+    if (!loan.professor_id) {
+      throw new Error('Professor é obrigatório para empréstimo em lote');
+    }
+    if (!books.length) {
+      throw new Error('Nenhum livro informado para empréstimo em lote');
+    }
+
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    const dateRetirada = new Date(loan.data_retirada);
+
+    const { data: professor, error: professorError } = await supabase
+      .from('professores')
+      .select('*')
+      .eq('id', loan.professor_id)
+      .single();
+
+    if (professorError) {
+      console.error('Erro ao buscar dados do professor:', professorError);
+      throw professorError;
+    }
+
+    const serieNum = parseInt(String(loan.serie || '0'), 10);
+    const serie = Number.isNaN(serieNum) ? 0 : Math.max(0, serieNum);
+    const turma = (loan.turma && String(loan.turma).trim()) || 'PROF';
+    const turno = (loan.turno && String(loan.turno).trim()) || 'PROF';
+    const dataNascimento = new Date().toISOString().split('T')[0];
+    const anoLetivo = String(new Date().getFullYear());
+
+    const { data: professorAluno, error: professorAlunoError } = await supabase
+      .from('alunos')
+      .insert({
+        nome: professor.nome,
+        serie,
+        turma,
+        turno,
+        sexo: 'N/A',
+        data_nascimento: dataNascimento,
+        escola_id: escolaId ?? undefined,
+        ano_letivo: anoLetivo,
+      })
+      .select()
+      .single();
+
+    if (professorAlunoError) {
+      console.error('Erro ao criar registro de professor (alunos):', professorAlunoError);
+      throw professorAlunoError;
+    }
+
+    const uniqueBooksMap = new Map<string, number>();
+    books.forEach((entry) => {
+      if (!entry.bookId) return;
+      const safeQty = Math.max(1, Number(entry.quantity) || 1);
+      uniqueBooksMap.set(entry.bookId, safeQty);
+    });
+    const uniqueBooks = Array.from(uniqueBooksMap.entries()).map(([bookId, quantity]) => ({ bookId, quantity }));
+
+    const loansData = uniqueBooks.map(({ bookId, quantity }) => ({
+      livro_id: bookId,
+      data_retirada: dateRetirada.toISOString(),
+      quantidade_retirada: quantity,
+      status: 'Emprestado',
+      escola_id: escolaId,
+      aluno_id: professorAluno.id,
+      professor_id: loan.professor_id,
+      serie: String(serie),
+      turma,
+      turno,
+      ano_letivo: anoLetivo
+    }));
+
+    const { data, error } = await supabase
+      .from('emprestimos')
+      .insert(loansData)
+      .select();
+
+    if (error) {
+      console.error('Erro ao criar empréstimos em lote para professor:', error);
+      throw error;
+    }
+
+    console.log(`Empréstimos em lote criados com sucesso: ${uniqueBooks.length}`);
+    return (data || []) as Loan[];
+  } catch (error) {
+    console.error('Erro ao criar empréstimos em lote para professor:', error);
+    throw error;
+  }
+};
+
+export const createStudentLoansBatch = async (
+  loan: Loan,
+  studentLoans: Array<{ studentId: string; bookId: string; quantity: number }>
+): Promise<Loan[]> => {
+  try {
+    if (!studentLoans.length) {
+      throw new Error('Nenhum empréstimo de aluno informado para lote');
+    }
+
+    const currentUser = await getCurrentUserWithSchool();
+    const escolaId = currentUser?.profile?.escola_id;
+    const dateRetirada = new Date(loan.data_retirada);
+
+    const uniqueMap = new Map<string, { studentId: string; bookId: string; quantity: number }>();
+    studentLoans.forEach((entry) => {
+      if (!entry.studentId || !entry.bookId) return;
+      const key = `${entry.studentId}-${entry.bookId}`;
+      const safeQty = Math.max(1, Number(entry.quantity) || 1);
+      if (uniqueMap.has(key)) {
+        const current = uniqueMap.get(key)!;
+        uniqueMap.set(key, { ...current, quantity: current.quantity + safeQty });
+      } else {
+        uniqueMap.set(key, { studentId: entry.studentId, bookId: entry.bookId, quantity: safeQty });
+      }
+    });
+
+    const uniqueStudentLoans = Array.from(uniqueMap.values());
+    const studentIds = Array.from(new Set(uniqueStudentLoans.map((entry) => entry.studentId)));
+
+    const { data: studentsData, error: studentsError } = await supabase
+      .from('alunos')
+      .select('id, serie, turma, turno, ano_letivo')
+      .in('id', studentIds);
+
+    if (studentsError) {
+      console.error('Erro ao buscar alunos para lote:', studentsError);
+      throw studentsError;
+    }
+
+    const studentMap = new Map(
+      (studentsData || []).map((student: any) => [student.id, student])
+    );
+
+    const loansData = uniqueStudentLoans.map((entry) => {
+      const student = studentMap.get(entry.studentId);
+      return {
+        livro_id: entry.bookId,
+        data_retirada: dateRetirada.toISOString(),
+        quantidade_retirada: entry.quantity,
+        status: 'Emprestado',
+        escola_id: escolaId,
+        aluno_id: entry.studentId,
+        professor_id: null,
+        serie: student?.serie ? String(student.serie) : null,
+        turma: student?.turma ?? null,
+        turno: student?.turno ?? null,
+        ano_letivo: student?.ano_letivo ?? null
+      };
+    });
+
+    const { data, error } = await supabase
+      .from('emprestimos')
+      .insert(loansData)
+      .select();
+
+    if (error) {
+      console.error('Erro ao criar empréstimos em lote para alunos:', error);
+      throw error;
+    }
+
+    console.log(`Empréstimos de alunos em lote criados com sucesso: ${loansData.length}`);
+    return (data || []) as Loan[];
+  } catch (error) {
+    console.error('Erro ao criar empréstimos em lote para alunos:', error);
+    throw error;
+  }
+};
+
 export const updateLoan = async (id: string, data: Partial<Loan>): Promise<Loan> => {
   // Prepare data object with correct date formats
   const updateData: any = {};

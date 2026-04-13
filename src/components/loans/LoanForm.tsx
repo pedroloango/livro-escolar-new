@@ -15,17 +15,42 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import AnoLetivoFilter from '@/components/common/AnoLetivoFilter';
-import { Barcode, Filter } from 'lucide-react';
+import { Barcode } from 'lucide-react';
 import { toast } from 'sonner';
 import BarcodeScanner from '@/components/common/BarcodeScanner';
 import { formatDateForInput } from '@/utils/download';
 
 interface LoanFormProps {
   initialData?: Loan;
-  onSubmit: (data: Loan) => void;
+  onSubmit: (payload: LoanFormSubmitPayload) => void;
   onCancel: () => void;
   isSubmitting: boolean;
+}
+
+export interface LoanFormSubmitPayload {
+  loan: Loan;
+  selectedBooks?: Array<{ bookId: string; quantity: number }>;
+  selectedStudentLoans?: Array<{ studentId: string; bookId: string; quantity: number }>;
+}
+
+interface ProfessorSelectedBook {
+  book: Book;
+  quantity: number;
+}
+
+interface StudentLoanListItem {
+  student: Student;
+  book: Book;
+  quantity: number;
 }
 
 export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting }: LoanFormProps) {
@@ -43,8 +68,13 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   const [turmaFilter, setTurmaFilter] = useState<string>('all');
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
   const [anoFilter, setAnoFilter] = useState<string>('2026');
-  const [showFilters, setShowFilters] = useState(false);
   const [personType, setPersonType] = useState<'aluno' | 'professor'>('aluno');
+  const [selectedProfessorBooks, setSelectedProfessorBooks] = useState<ProfessorSelectedBook[]>([]);
+  const [selectedStudentLoans, setSelectedStudentLoans] = useState<StudentLoanListItem[]>([]);
+  const [isStudentPickerOpen, setIsStudentPickerOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [pendingScannedBook, setPendingScannedBook] = useState<Book | null>(null);
+  const [selectedModalStudentId, setSelectedModalStudentId] = useState<string>('');
 
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset, setError, clearErrors } = useForm<Loan>({
     defaultValues: initialData || {
@@ -165,7 +195,30 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
     try {
       const book = await findBookByBarcode(barcode);
       if (book && book.id) {
-        setValue('livro_id', book.id, { shouldValidate: true });
+        if (personType === 'professor') {
+          setSelectedProfessorBooks((prev) => {
+            const existing = prev.find((entry) => entry.book.id === book.id);
+            if (existing) {
+              toast.success(`Quantidade aumentada: ${book.titulo}`);
+              return prev.map((entry) =>
+                entry.book.id === book.id ? { ...entry, quantity: entry.quantity + 1 } : entry
+              );
+            }
+            toast.success(`Livro adicionado: ${book.titulo}`);
+            return [...prev, { book, quantity: 1 }];
+          });
+          setValue('livro_id', '');
+        } else if (filteredStudents.length > 0) {
+          setPendingScannedBook(book);
+          setStudentSearch('');
+          setSelectedModalStudentId(watchStudentId || filteredStudents[0]?.id || '');
+          setIsStudentPickerOpen(true);
+          setValue('livro_id', '');
+          toast.success(`Livro reconhecido: ${book.titulo}`);
+        } else {
+          setValue('livro_id', book.id, { shouldValidate: true });
+          toast.success(`Livro selecionado: ${book.titulo}`);
+        }
         setBookSearch('');
         setFilteredBooks((prev) => {
           if (!prev.find(b => b.id === book.id)) {
@@ -173,7 +226,6 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
           }
           return prev;
         });
-        toast.success(`Livro selecionado: ${book.titulo}`);
       } else {
         toast.error('Livro não encontrado com este código de barras');
       }
@@ -192,14 +244,36 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
     try {
       const book = await findBookByBarcode(code);
       if (book && book.id) {
-        setValue('livro_id', book.id, { shouldValidate: true });
+        if (personType === 'professor') {
+          setSelectedProfessorBooks((prev) => {
+            const existing = prev.find((entry) => entry.book.id === book.id);
+            if (existing) {
+              toast.success(`Quantidade aumentada: ${book.titulo}`);
+              return prev.map((entry) =>
+                entry.book.id === book.id ? { ...entry, quantity: entry.quantity + 1 } : entry
+              );
+            }
+            toast.success(`Livro adicionado: ${book.titulo}`);
+            return [...prev, { book, quantity: 1 }];
+          });
+          setValue('livro_id', '');
+        } else if (filteredStudents.length > 0) {
+          setPendingScannedBook(book);
+          setStudentSearch('');
+          setSelectedModalStudentId(watchStudentId || filteredStudents[0]?.id || '');
+          setIsStudentPickerOpen(true);
+          setValue('livro_id', '');
+          toast.success(`Livro reconhecido: ${book.titulo}`);
+        } else {
+          setValue('livro_id', book.id, { shouldValidate: true });
+          toast.success(`Livro selecionado: ${book.titulo}`);
+        }
         setFilteredBooks((prev) => {
           if (!prev.find(b => b.id === book.id)) {
             return [book, ...prev];
           }
           return prev;
         });
-        toast.success(`Livro selecionado: ${book.titulo}`);
       } else {
         toast.error('Livro não encontrado com este código de barras');
       }
@@ -258,13 +332,35 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
             try {
               const book = await findBookByBarcode(code);
               if (book && book.id) {
-                setValue('livro_id', book.id, { shouldValidate: true });
+                if (personType === 'professor') {
+                  setSelectedProfessorBooks((prev) => {
+                    const existing = prev.find((entry) => entry.book.id === book.id);
+                    if (existing) {
+                      toast.success(`Quantidade aumentada: ${book.titulo}`);
+                      return prev.map((entry) =>
+                        entry.book.id === book.id ? { ...entry, quantity: entry.quantity + 1 } : entry
+                      );
+                    }
+                    toast.success(`Livro adicionado: ${book.titulo}`);
+                    return [...prev, { book, quantity: 1 }];
+                  });
+                  setValue('livro_id', '');
+                } else if (filteredStudents.length > 0) {
+                  setPendingScannedBook(book);
+                  setStudentSearch('');
+                  setSelectedModalStudentId(watchStudentId || filteredStudents[0]?.id || '');
+                  setIsStudentPickerOpen(true);
+                  setValue('livro_id', '');
+                  toast.success(`Livro reconhecido: ${book.titulo}`);
+                } else {
+                  setValue('livro_id', book.id, { shouldValidate: true });
+                  toast.success(`Livro selecionado: ${book.titulo}`);
+                }
                 setFilteredBooks((prev) => {
                   if (!prev.find(b => b.id === book.id)) return [book, ...prev];
                   return prev;
                 });
                 setBarcodeInput(code);
-                toast.success(`Livro selecionado: ${book.titulo}`);
               } else {
                 toast.error('Livro não encontrado com este código de barras');
               }
@@ -282,7 +378,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       window.removeEventListener('keydown', onKeyDown, { capture: true });
       if (clearTimer) window.clearTimeout(clearTimer);
     };
-  }, [setValue, setFilteredBooks, setBarcodeInput, toast]);
+  }, [setValue, setFilteredBooks, setBarcodeInput, toast, personType, watchStudentId, filteredStudents]);
 
   const series = Array.from(new Set(students.map(student => student.serie)))
     .sort((a, b) => a - b)
@@ -301,6 +397,13 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       return a.localeCompare(b, undefined, { numeric: true });
     });
 
+  const modalFilteredStudents = filteredStudents.filter((student) => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return true;
+    const composed = `${student.nome} ${student.serie} ${student.turma} ${student.turno} ${student.ano_letivo ?? ''}`.toLowerCase();
+    return composed.includes(q);
+  });
+
   if (loading) {
     return (
       <Card className="w-full">
@@ -315,6 +418,11 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
 
   function handlePersonTypeChange(value: 'aluno' | 'professor') {
     setPersonType(value);
+    if (value === 'aluno') {
+      setSelectedProfessorBooks([]);
+    } else {
+      setSelectedStudentLoans([]);
+    }
     // Limpa seleção ao trocar
     reset({ ...watch(), aluno_id: '', professor_id: '' });
   }
@@ -339,13 +447,15 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
   }
 
   const validateForm = (data: Loan) => {
-    if (!data.livro_id) {
+    const hasStudentBatch = personType === 'aluno' && selectedStudentLoans.length > 0;
+
+    if (personType === 'aluno' && !hasStudentBatch && !data.livro_id) {
       toast.error('Selecione um livro');
       return false;
     }
 
     if (personType === 'aluno') {
-      if (!data.aluno_id) {
+      if (!hasStudentBatch && !data.aluno_id) {
         toast.error('Selecione um aluno');
         return false;
       }
@@ -377,14 +487,18 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       clearErrors(['turma', 'serie', 'turno']);
       // Limpar campo do aluno quando for professor
       setValue('aluno_id', '');
+      if (selectedProfessorBooks.length === 0) {
+        toast.error('Adicione pelo menos um livro para o professor');
+        return false;
+      }
     }
 
-    if (!data.data_retirada) {
+    if (personType === 'aluno' && !hasStudentBatch && !data.data_retirada) {
       toast.error('Data de retirada é obrigatória');
       return false;
     }
 
-    if (!data.quantidade_retirada || data.quantidade_retirada < 1) {
+    if (personType === 'aluno' && !hasStudentBatch && (!data.quantidade_retirada || data.quantidade_retirada < 1)) {
       toast.error('Quantidade deve ser maior que zero');
       return false;
     }
@@ -399,44 +513,258 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
       data.serie = '';
       data.turma = '';
       data.turno = '';
+      if (selectedStudentLoans.length > 0) {
+        data.aluno_id = selectedStudentLoans[0]?.student.id || '';
+        data.livro_id = selectedStudentLoans[0]?.book.id || '';
+        data.data_retirada = formatDateForInput(new Date());
+        data.quantidade_retirada = 1;
+      }
     } else {
       data.aluno_id = '';
+      data.livro_id = selectedProfessorBooks[0]?.book?.id || '';
+      data.data_retirada = formatDateForInput(new Date());
+      data.quantidade_retirada = 1;
     }
 
     if (validateForm(data)) {
-      onSubmit(data);
+      onSubmit({
+        loan: data,
+        selectedBooks: personType === 'professor'
+          ? selectedProfessorBooks
+              .filter((entry): entry is ProfessorSelectedBook => Boolean(entry.book.id))
+              .map((entry) => ({ bookId: entry.book.id as string, quantity: entry.quantity }))
+          : undefined,
+        selectedStudentLoans: personType === 'aluno'
+          ? selectedStudentLoans
+              .filter((entry) => Boolean(entry.student.id) && Boolean(entry.book.id))
+              .map((entry) => ({
+                studentId: entry.student.id as string,
+                bookId: entry.book.id as string,
+                quantity: entry.quantity
+              }))
+          : undefined
+      });
     }
+  };
+
+  const addSelectedStudentAndBookToList = () => {
+    const selectedStudent = students.find((student) => student.id === watchStudentId);
+    const selectedBook = books.find((book) => book.id === watchBookId);
+    if (!selectedStudent?.id) {
+      toast.error('Selecione um aluno');
+      return;
+    }
+    if (!selectedBook?.id) {
+      toast.error('Selecione um livro');
+      return;
+    }
+
+    const itemKey = `${selectedStudent.id}-${selectedBook.id}`;
+    setSelectedStudentLoans((prev) => {
+      const existing = prev.find((entry) => `${entry.student.id}-${entry.book.id}` === itemKey);
+      if (existing) {
+        toast.success(`Quantidade aumentada para ${selectedStudent.nome}`);
+        return prev.map((entry) =>
+          `${entry.student.id}-${entry.book.id}` === itemKey
+            ? { ...entry, quantity: entry.quantity + 1 }
+            : entry
+        );
+      }
+      return [...prev, { student: selectedStudent, book: selectedBook, quantity: 1 }];
+    });
+
+    setValue('livro_id', '');
+    setBookSearch('');
+  };
+
+  const includeScannedBookForSelectedStudent = () => {
+    if (!pendingScannedBook?.id) {
+      toast.error('Nenhum livro reconhecido para incluir');
+      return;
+    }
+    const selectedStudent = filteredStudents.find((student) => student.id === selectedModalStudentId);
+    if (!selectedStudent?.id) {
+      toast.error('Selecione um aluno para incluir');
+      return;
+    }
+
+    const itemKey = `${selectedStudent.id}-${pendingScannedBook.id}`;
+    setSelectedStudentLoans((prev) => {
+      const existing = prev.find((entry) => `${entry.student.id}-${entry.book.id}` === itemKey);
+      if (existing) {
+        return prev.map((entry) =>
+          `${entry.student.id}-${entry.book.id}` === itemKey
+            ? { ...entry, quantity: entry.quantity + 1 }
+            : entry
+        );
+      }
+      return [...prev, { student: selectedStudent, book: pendingScannedBook, quantity: 1 }];
+    });
+
+    toast.success(`Incluído: ${selectedStudent.nome} + ${pendingScannedBook.titulo}`);
+    setIsStudentPickerOpen(false);
+    setPendingScannedBook(null);
+    setSelectedModalStudentId('');
+    setStudentSearch('');
+  };
+
+  const addSelectedBookToProfessorList = () => {
+    const selectedBook = books.find((book) => book.id === watchBookId);
+    if (!selectedBook || !selectedBook.id) {
+      toast.error('Selecione um livro para adicionar');
+      return;
+    }
+    setSelectedProfessorBooks((prev) => {
+      const existing = prev.find((entry) => entry.book.id === selectedBook.id);
+      if (existing) {
+        toast.success(`Quantidade aumentada: ${selectedBook.titulo}`);
+        return prev.map((entry) =>
+          entry.book.id === selectedBook.id ? { ...entry, quantity: entry.quantity + 1 } : entry
+        );
+      }
+      return [...prev, { book: selectedBook, quantity: 1 }];
+    });
+    setValue('livro_id', '');
+    setBookSearch('');
+  };
+
+  const removeProfessorBook = (bookId?: string) => {
+    if (!bookId) return;
+    setSelectedProfessorBooks((prev) => prev.filter((entry) => entry.book.id !== bookId));
+  };
+
+  const increaseProfessorBookQuantity = (bookId?: string) => {
+    if (!bookId) return;
+    setSelectedProfessorBooks((prev) =>
+      prev.map((entry) =>
+        entry.book.id === bookId ? { ...entry, quantity: entry.quantity + 1 } : entry
+      )
+    );
+  };
+
+  const decreaseProfessorBookQuantity = (bookId?: string) => {
+    if (!bookId) return;
+    setSelectedProfessorBooks((prev) =>
+      prev.map((entry) =>
+        entry.book.id === bookId
+          ? { ...entry, quantity: Math.max(1, entry.quantity - 1) }
+          : entry
+      )
+    );
+  };
+
+  const removeStudentLoanItem = (studentId?: string, bookId?: string) => {
+    if (!studentId || !bookId) return;
+    setSelectedStudentLoans((prev) =>
+      prev.filter((entry) => !(entry.student.id === studentId && entry.book.id === bookId))
+    );
+  };
+
+  const increaseStudentLoanQuantity = (studentId?: string, bookId?: string) => {
+    if (!studentId || !bookId) return;
+    setSelectedStudentLoans((prev) =>
+      prev.map((entry) =>
+        entry.student.id === studentId && entry.book.id === bookId
+          ? { ...entry, quantity: entry.quantity + 1 }
+          : entry
+      )
+    );
+  };
+
+  const decreaseStudentLoanQuantity = (studentId?: string, bookId?: string) => {
+    if (!studentId || !bookId) return;
+    setSelectedStudentLoans((prev) =>
+      prev.map((entry) =>
+        entry.student.id === studentId && entry.book.id === bookId
+          ? { ...entry, quantity: Math.max(1, entry.quantity - 1) }
+          : entry
+      )
+    );
   };
 
   return (
     <Card className="w-full">
       <CardHeader>
-        <div className="flex justify-between items-center">
-          <CardTitle>{initialData ? 'Editar Empréstimo' : 'Novo Empréstimo'}</CardTitle>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            Filtros
-          </Button>
-        </div>
+        <CardTitle>{initialData ? 'Editar Empréstimo' : 'Novo Empréstimo'}</CardTitle>
       </CardHeader>
       <form onSubmit={handleSubmit(handleFormSubmit)}>
         <CardContent className="space-y-4">
-          {/* Seletor Aluno/Professor */}
-          <div className="flex gap-4 items-center">
-            <Label>Tipo de pessoa:</Label>
-            <Select value={personType} onValueChange={handlePersonTypeChange}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="aluno">Aluno</SelectItem>
-                <SelectItem value="professor">Professor</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Tipo de pessoa + filtros de aluno (mesma linha, compacto) */}
+          <div className="flex flex-nowrap items-end gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 -mx-1 px-1">
+            <div className="flex flex-col gap-0.5 shrink-0">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">Tipo de pessoa</Label>
+              <Select value={personType} onValueChange={handlePersonTypeChange}>
+                <SelectTrigger className="h-8 w-[6.75rem] text-xs px-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="aluno">Aluno</SelectItem>
+                  <SelectItem value="professor">Professor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {personType === 'aluno' && (
+              <>
+                <div className="flex flex-col gap-0.5 w-[4.5rem] sm:w-[5rem] shrink-0 min-w-0">
+                  <Label htmlFor="serie-filter" className="text-xs text-muted-foreground whitespace-nowrap">Série</Label>
+                  <Select value={serieFilter} onValueChange={setSerieFilter}>
+                    <SelectTrigger id="serie-filter" className="h-8 text-xs px-2">
+                      <SelectValue placeholder="Série" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas</SelectItem>
+                      {allSeries.map((serie) => (
+                        <SelectItem key={serie} value={serie}>
+                          {serie}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-0.5 w-[4.5rem] sm:w-[5rem] shrink-0 min-w-0">
+                  <Label htmlFor="turma-filter" className="text-xs text-muted-foreground whitespace-nowrap">Turma</Label>
+                  <Select value={turmaFilter} onValueChange={setTurmaFilter}>
+                    <SelectTrigger id="turma-filter" className="h-8 text-xs px-2">
+                      <SelectValue placeholder="Turma" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas</SelectItem>
+                      {turmas.map((turma) => (
+                        <SelectItem key={turma} value={turma}>
+                          {turma}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-0.5 w-[4.75rem] sm:w-[5.25rem] shrink-0 min-w-0">
+                  <Label htmlFor="turno-filter" className="text-xs text-muted-foreground whitespace-nowrap">Turno</Label>
+                  <Select value={turnoFilter} onValueChange={setTurnoFilter}>
+                    <SelectTrigger id="turno-filter" className="h-8 text-xs px-2">
+                      <SelectValue placeholder="Turno" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {turnos.map((turno) => (
+                        <SelectItem key={turno} value={turno}>
+                          {turno}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-[5.25rem] sm:w-[5.75rem] shrink-0 min-w-0 [&_label]:text-xs [&_label]:text-muted-foreground [&_label]:whitespace-nowrap [&_button]:h-8 [&_button]:px-2 [&_button]:text-xs">
+                  <AnoLetivoFilter
+                    className="space-y-0.5"
+                    value={anoFilter}
+                    onValueChange={setAnoFilter}
+                    years={Array.from(new Set(students.map(s => s.ano_letivo ? String(s.ano_letivo).trim() : null).filter(Boolean))).sort((a, b) => Number(a) - Number(b))}
+                    id="ano-filter"
+                    placeholder="Ano"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Seleção de Aluno ou Professor */}
@@ -445,7 +773,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
               <Label htmlFor="aluno_id">Aluno</Label>
               <select
                 id="aluno_id"
-                {...register('aluno_id', { required: personType === 'aluno' })}
+                {...register('aluno_id', { required: personType === 'aluno' && selectedStudentLoans.length === 0 })}
                 value={watchStudentId}
                 onChange={handlePersonSelect}
                 className="w-full border rounded p-2"
@@ -543,82 +871,8 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
             </>
           )}
 
-          {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 mb-2 bg-muted/30 rounded-md">
-              <div className="space-y-2">
-                <Label htmlFor="serie-filter">Série</Label>
-                <Select
-                  value={serieFilter}
-                  onValueChange={setSerieFilter}
-                >
-                  <SelectTrigger id="serie-filter">
-                    <SelectValue placeholder="Filtrar por série" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    {allSeries.map((serie) => (
-                      <SelectItem key={serie} value={serie}>
-                        {serie}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="turma-filter">Turma</Label>
-                <Select
-                  value={turmaFilter}
-                  onValueChange={setTurmaFilter}
-                >
-                  <SelectTrigger id="turma-filter">
-                    <SelectValue placeholder="Filtrar por turma" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    {turmas.map((turma) => (
-                      <SelectItem key={turma} value={turma}>
-                        {turma}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="turno-filter">Turno</Label>
-                <Select
-                  value={turnoFilter}
-                  onValueChange={setTurnoFilter}
-                >
-                  <SelectTrigger id="turno-filter">
-                    <SelectValue placeholder="Filtrar por turno" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {turnos.map((turno) => (
-                      <SelectItem key={turno} value={turno}>
-                        {turno}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="space-y-2">
-                <AnoLetivoFilter
-                  value={anoFilter}
-                  onValueChange={setAnoFilter}
-                  years={Array.from(new Set(students.map(s => s.ano_letivo ? String(s.ano_letivo).trim() : null).filter(Boolean))).sort((a, b) => Number(a) - Number(b))}
-                  id="ano-filter"
-                  placeholder="Filtrar por ano"
-                />
-              </div>
-            </div>
-          )}
-
           <div className="space-y-2">
-            <Label htmlFor="livro_id">Livro</Label>
+            <Label htmlFor="livro_id">{personType === 'professor' ? 'Livro (Adicionar à lista)' : 'Livro'}</Label>
             <div className="flex flex-col space-y-2">
               <div className="flex space-x-2">
                 <div className="flex-1">
@@ -648,6 +902,16 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                       ))}
                     </SelectContent>
                   </Select>
+                  {personType === 'professor' && (
+                    <Button type="button" variant="secondary" className="mt-2" onClick={addSelectedBookToProfessorList}>
+                      Adicionar livro à lista
+                    </Button>
+                  )}
+                  {personType === 'aluno' && (
+                    <Button type="button" variant="secondary" className="mt-2" onClick={addSelectedStudentAndBookToList}>
+                      Adicionar aluno + livro à lista
+                    </Button>
+                  )}
                 </div>
                     <div className="flex flex-col gap-2 w-56">
                       <div className="flex items-center gap-2">
@@ -672,10 +936,111 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
                       </Button>
                     </div>
               </div>
-              {errors.livro_id && <p className="text-red-500 text-sm">Livro é obrigatório</p>}
+              {personType === 'aluno' && errors.livro_id && <p className="text-red-500 text-sm">Livro é obrigatório</p>}
             </div>
           </div>
 
+          {personType === 'professor' && (
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <Label>Livros adicionados ({selectedProfessorBooks.length})</Label>
+              </div>
+              {selectedProfessorBooks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhum livro adicionado. Use a busca, seleção ou leitor de código de barras para montar a lista.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedProfessorBooks.map((entry) => (
+                    <div key={entry.book.id} className="flex items-center justify-between gap-2 rounded border p-2">
+                      <div>
+                        <p className="font-medium">{entry.book.titulo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {entry.book.autor || 'Sem autor'}{entry.book.editora ? ` - ${entry.book.editora}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center rounded border">
+                          <Button type="button" variant="ghost" size="sm" onClick={() => decreaseProfessorBookQuantity(entry.book.id)}>
+                            -
+                          </Button>
+                          <span className="min-w-8 text-center text-sm font-medium">{entry.quantity}</span>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => increaseProfessorBookQuantity(entry.book.id)}>
+                            +
+                          </Button>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => removeProfessorBook(entry.book.id)}
+                        >
+                          Excluir
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {personType === 'aluno' && (
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <Label>Lista de empréstimos (Aluno + Livro) ({selectedStudentLoans.length})</Label>
+              </div>
+              {selectedStudentLoans.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Selecione um aluno filtrado, leia/seleciona o livro e adicione na lista. Depois registre tudo de uma vez.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedStudentLoans.map((entry) => (
+                    <div key={`${entry.student.id}-${entry.book.id}`} className="flex items-center justify-between gap-2 rounded border p-2">
+                      <div>
+                        <p className="font-medium">{entry.student.nome} - {entry.book.titulo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {entry.student.serie}o {entry.student.turma} ({entry.student.turno})
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center rounded border">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => decreaseStudentLoanQuantity(entry.student.id, entry.book.id)}
+                          >
+                            -
+                          </Button>
+                          <span className="min-w-8 text-center text-sm font-medium">{entry.quantity}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => increaseStudentLoanQuantity(entry.student.id, entry.book.id)}
+                          >
+                            +
+                          </Button>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => removeStudentLoanItem(entry.student.id, entry.book.id)}
+                        >
+                          Excluir
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {personType === 'aluno' && selectedStudentLoans.length === 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="data_retirada">Data de Retirada</Label>
@@ -707,6 +1072,7 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
               )}
             </div>
           </div>
+          )}
         </CardContent>
 
         <CardFooter className="flex justify-between">
@@ -724,6 +1090,73 @@ export default function LoanForm({ initialData, onSubmit, onCancel, isSubmitting
         onClose={() => setIsScannerOpen(false)}
         onScan={handleBarcodeScan}
       />
+
+      <Dialog
+        open={isStudentPickerOpen}
+        onOpenChange={(open) => {
+          setIsStudentPickerOpen(open);
+          if (!open) {
+            setPendingScannedBook(null);
+            setSelectedModalStudentId('');
+            setStudentSearch('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Selecionar aluno para incluir</DialogTitle>
+            <DialogDescription>
+              Livro reconhecido: <strong>{pendingScannedBook?.titulo ?? '-'}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              type="text"
+              placeholder="Pesquisar aluno por nome, série, turma, turno..."
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+            />
+
+            <div className="max-h-72 overflow-y-auto rounded-md border">
+              {modalFilteredStudents.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">Nenhum aluno encontrado com os filtros aplicados.</p>
+              ) : (
+                <div className="divide-y">
+                  {modalFilteredStudents.map((student) => (
+                    <button
+                      key={student.id}
+                      type="button"
+                      className={`w-full px-3 py-2 text-left text-sm border-l-4 transition-colors ${
+                        selectedModalStudentId === student.id
+                          ? 'bg-primary/15 border-l-primary ring-1 ring-primary/30'
+                          : 'border-l-transparent hover:bg-muted'
+                      }`}
+                      onClick={() => setSelectedModalStudentId(student.id || '')}
+                    >
+                      <div className={`font-medium ${selectedModalStudentId === student.id ? 'text-primary' : ''}`}>
+                        {student.nome}
+                      </div>
+                      <div className={`text-xs ${selectedModalStudentId === student.id ? 'text-foreground/90' : 'text-muted-foreground'}`}>
+                        {student.serie}o {student.turma} ({student.turno}) - Ano {student.ano_letivo ?? '-'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsStudentPickerOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={includeScannedBookForSelectedStudent}>
+              Incluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
