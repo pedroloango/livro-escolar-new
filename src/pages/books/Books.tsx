@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,9 @@ export default function Books() {
   const [books, setBooks] = useState<Book[]>([]);
   const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFiltering, setIsFiltering] = useState(false);
   const [titleFilter, setTitleFilter] = useState('');
+  const [debouncedTitleFilter, setDebouncedTitleFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -61,33 +63,77 @@ export default function Books() {
   } | null>(null);
   const [isMigrating, setIsMigrating] = useState(false);
   const [fieldsExist, setFieldsExist] = useState<boolean | null>(null);
+  const scannerBufferRef = useRef('');
+  const scannerLastKeyAtRef = useRef(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      fetchBooksCount();
+      fetchBooksCount(debouncedTitleFilter);
       fetchStockSummary();
       checkFields();
     }
   }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedTitleFilter(titleFilter);
+    }, 350);
+
+    return () => clearTimeout(timeoutId);
+  }, [titleFilter]);
+
+  useEffect(() => {
+    const SCANNER_MAX_KEY_INTERVAL_MS = 45;
+    const SCANNER_MIN_LENGTH = 6;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+      const now = Date.now();
+      const elapsed = now - scannerLastKeyAtRef.current;
+
+      if (event.key === 'Enter') {
+        const scannedValue = scannerBufferRef.current.trim();
+        if (scannedValue.length >= SCANNER_MIN_LENGTH) {
+          setTitleFilter(scannedValue);
+          setDebouncedTitleFilter(scannedValue);
+          setCurrentPage(1);
+          event.preventDefault();
+        }
+        scannerBufferRef.current = '';
+        scannerLastKeyAtRef.current = now;
+        return;
+      }
+
+      if (event.key.length !== 1) {
+        return;
+      }
+
+      if (elapsed > SCANNER_MAX_KEY_INTERVAL_MS) {
+        scannerBufferRef.current = event.key;
+      } else {
+        scannerBufferRef.current += event.key;
+      }
+      scannerLastKeyAtRef.current = now;
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!authLoading && isAuthenticated) {
       fetchBooks();
     }
-  }, [authLoading, isAuthenticated, currentPage]);
+  }, [authLoading, isAuthenticated, currentPage, debouncedTitleFilter]);
 
   useEffect(() => {
-    // Aplicar filtro por título
-    if (titleFilter) {
-      const filtered = books.filter(book => 
-        book.titulo.toLowerCase().includes(titleFilter.toLowerCase())
-      );
-      setFilteredBooks(filtered);
-    } else {
-      setFilteredBooks(books);
+    if (!authLoading && isAuthenticated) {
+      setCurrentPage(1);
+      fetchBooksCount(debouncedTitleFilter);
     }
-  }, [books, titleFilter]);
+  }, [debouncedTitleFilter, authLoading, isAuthenticated]);
 
   const checkFields = async () => {
     try {
@@ -122,9 +168,14 @@ export default function Books() {
 
   const fetchBooks = async () => {
     try {
-      setLoading(true);
+      const shouldBlockScreen = books.length === 0;
+      if (shouldBlockScreen) {
+        setLoading(true);
+      } else {
+        setIsFiltering(true);
+      }
       const offset = (currentPage - 1) * BOOKS_PAGE_SIZE;
-      const data = await getBooks(BOOKS_PAGE_SIZE, offset);
+      const data = await getBooks(BOOKS_PAGE_SIZE, offset, debouncedTitleFilter);
       setBooks(data);
       setFilteredBooks(data);
     } catch (error) {
@@ -132,13 +183,16 @@ export default function Books() {
       toast.error('Erro ao carregar livros');
     } finally {
       setLoading(false);
+      setIsFiltering(false);
     }
   };
 
-  const fetchBooksCount = async () => {
+  const fetchBooksCount = async (filter?: string) => {
     try {
-      const count = await getBooksCount();
-      setTotalBooks(count);
+      const count = await getBooksCount(filter);
+      if (!filter?.trim()) {
+        setTotalBooks(count);
+      }
       setTotalCount(count);
       setTotalPages(Math.max(1, Math.ceil(count / BOOKS_PAGE_SIZE)));
     } catch (error) {
@@ -196,9 +250,10 @@ export default function Books() {
       const existingBook = await findBookByBarcode(barcode);
       
       if (existingBook) {
-        // Se encontrou o livro, filtra apenas para ele
-        setFilteredBooks([existingBook]);
-        setTitleFilter(''); // Limpa o filtro de título para não confundir
+        // Se encontrou o livro, aplica o filtro pelo código para manter fluxo consistente
+        setTitleFilter(barcode);
+        setDebouncedTitleFilter(barcode);
+        setCurrentPage(1);
         setBookInfo(null);
         setIsLookingUp(false);
         setIsLookupDialogOpen(false);
@@ -445,10 +500,13 @@ export default function Books() {
             <div className="flex flex-col md:flex-row gap-4 items-end">
               <div className="flex-1">
                 <Input
-                  placeholder="Buscar por título..."
+                  placeholder="Buscar por título ou código de barras..."
                   value={titleFilter}
                   onChange={(e) => setTitleFilter(e.target.value)}
                 />
+                {isFiltering && (
+                  <p className="text-xs text-muted-foreground mt-1">Filtrando...</p>
+                )}
               </div>
               <Button 
                 variant="outline" 
@@ -465,8 +523,6 @@ export default function Books() {
             <DataTable
               columns={columns}
               data={filteredBooks}
-              searchKey="titulo"
-              searchPlaceholder="Buscar por título..."
             />
             {totalPages > 1 && (
               <div className="mt-4 flex items-center justify-center gap-2">

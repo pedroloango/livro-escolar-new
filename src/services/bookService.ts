@@ -3,10 +3,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { getCurrentUserWithSchool } from '@/services/userService';
 
 /** Busca livros com paginação. Sem limit/offset retorna todos (evitar em telas iniciais). */
-export const getBooks = async (limit?: number, offset?: number): Promise<Book[]> => {
+export const getBooks = async (limit?: number, offset?: number, searchTerm?: string): Promise<Book[]> => {
   try {
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
+    const normalizedSearchTerm = searchTerm?.trim();
 
     if (limit != null && offset != null) {
       // Paginação: buscar só a página e calcular estoque só desses livros
@@ -16,6 +17,9 @@ export const getBooks = async (limit?: number, offset?: number): Promise<Book[]>
         .range(offset, offset + limit - 1)
         .order('titulo', { ascending: true });
       if (escolaId) query = query.eq('escola_id', escolaId);
+      if (normalizedSearchTerm) {
+        query = query.or(`titulo.ilike.%${normalizedSearchTerm}%,codigo_barras.ilike.%${normalizedSearchTerm}%`);
+      }
       const { data: booksData, error } = await query;
       if (error) throw error;
       if (!booksData?.length) return [];
@@ -60,6 +64,9 @@ export const getBooks = async (limit?: number, offset?: number): Promise<Book[]>
     while (hasMore) {
       let query = supabase.from('livros').select('*').range(from, from + batchSize - 1);
       if (escolaId) query = query.eq('escola_id', escolaId);
+      if (normalizedSearchTerm) {
+        query = query.or(`titulo.ilike.%${normalizedSearchTerm}%,codigo_barras.ilike.%${normalizedSearchTerm}%`);
+      }
       const { data, error } = await query;
       if (error) throw error;
       if (data?.length) {
@@ -271,15 +278,19 @@ export const deleteBook = async (id: string): Promise<void> => {
   }
 };
 
-export const getBooksCount = async (): Promise<number> => {
+export const getBooksCount = async (searchTerm?: string): Promise<number> => {
   try {
     // Obter o usuário atual para filtrar por escola_id
     const currentUser = await getCurrentUserWithSchool();
     const escolaId = currentUser?.profile?.escola_id;
+    const normalizedSearchTerm = searchTerm?.trim();
 
     let query = supabase.from('livros').select('*', { count: 'exact', head: true });
     if (escolaId) {
       query = query.eq('escola_id', escolaId);
+    }
+    if (normalizedSearchTerm) {
+      query = query.or(`titulo.ilike.%${normalizedSearchTerm}%,codigo_barras.ilike.%${normalizedSearchTerm}%`);
     }
     const { count, error } = await query;
     if (error) {

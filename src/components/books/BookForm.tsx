@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { Book } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Barcode, AlertTriangle } from 'lucide-react';
 import BarcodeScanner from '@/components/common/BarcodeScanner';
-import { getPendingLoansForBook, checkStockFieldsExist } from '@/services/bookService';
+import { getPendingLoansForBook, checkStockFieldsExist, findBookByBarcode } from '@/services/bookService';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface BookFormProps {
   initialData?: Book;
@@ -19,6 +28,7 @@ interface BookFormProps {
 }
 
 export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting }: BookFormProps) {
+  const navigate = useNavigate();
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<Book>({
     defaultValues: initialData || {
       titulo: '',
@@ -33,6 +43,8 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
   const [quantidadePendente, setQuantidadePendente] = useState(0);
   const [isLoadingPending, setIsLoadingPending] = useState(false);
   const [showQuantityFields, setShowQuantityFields] = useState(false);
+  const [existingBook, setExistingBook] = useState<Book | null>(null);
+  const [existingBookDialogOpen, setExistingBookDialogOpen] = useState(false);
 
   const quantidadeTotal = watch('quantidade_total');
 
@@ -66,8 +78,21 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
     fetchPendingLoans();
   }, [initialData?.id]);
 
-  const handleBarcodeScan = (barcode: string) => {
-    setValue('codigo_barras', barcode);
+  const handleScannedBarcode = async (barcode: string) => {
+    setValue('codigo_barras', barcode, { shouldValidate: true, shouldDirty: true });
+
+    // Esse comportamento só é necessário na tela de novo livro
+    if (initialData?.id) return;
+
+    try {
+      const foundBook = await findBookByBarcode(barcode);
+      if (foundBook) {
+        setExistingBook(foundBook);
+        setExistingBookDialogOpen(true);
+      }
+    } catch (error) {
+      console.error('Erro ao verificar livro por código de barras:', error);
+    }
   };
 
   // Suporte a leitor de código de barras USB (emula teclado)
@@ -92,7 +117,7 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
         buffer = '';
         if (clearTimer) window.clearTimeout(clearTimer);
         if (code) {
-          setValue('codigo_barras', code);
+          void handleScannedBarcode(code);
         }
       }
     };
@@ -102,7 +127,7 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
       window.removeEventListener('keydown', onKeyDown, { capture: true });
       if (clearTimer) window.clearTimeout(clearTimer);
     };
-  }, [setValue]);
+  }, [setValue, initialData?.id]);
 
   const handleFormSubmit = (data: Book) => {
     console.log('BookForm Debug - handleFormSubmit:', { 
@@ -284,8 +309,44 @@ export default function BookForm({ initialData, onSubmit, onCancel, isSubmitting
       <BarcodeScanner 
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
-        onScan={handleBarcodeScan}
+        onScan={handleScannedBarcode}
       />
+
+      <Dialog open={existingBookDialogOpen} onOpenChange={setExistingBookDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Livro já cadastrado</DialogTitle>
+            <DialogDescription>
+              Já existe um livro com este código de barras no sistema.
+            </DialogDescription>
+          </DialogHeader>
+
+          {existingBook && (
+            <div className="space-y-2 text-sm">
+              <p><strong>Título:</strong> {existingBook.titulo}</p>
+              <p><strong>Código de barras:</strong> {existingBook.codigo_barras}</p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExistingBookDialogOpen(false)}
+            >
+              Fechar
+            </Button>
+            <Button
+              onClick={() => {
+                if (!existingBook?.id) return;
+                setExistingBookDialogOpen(false);
+                navigate(`/books/edit/${existingBook.id}`);
+              }}
+            >
+              Editar livro
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
