@@ -43,6 +43,8 @@ export default function Students() {
   const [turnoFilter, setTurnoFilter] = useState<string>('all');
   const [anoFilter, setAnoFilter] = useState<string>('all');
   const [nameFilter, setNameFilter] = useState<string>('');
+  const [debouncedNameFilter, setDebouncedNameFilter] = useState<string>('');
+  const [isFiltering, setIsFiltering] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -64,14 +66,22 @@ export default function Students() {
   }, [authLoading, isAuthenticated]);
 
   useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedNameFilter(nameFilter);
+    }, 350);
+
+    return () => clearTimeout(timeoutId);
+  }, [nameFilter]);
+
+  useEffect(() => {
     if (!authLoading && isAuthenticated) {
       fetchStudents();
     }
-  }, [authLoading, isAuthenticated, anoFilter, serieFilter, turmaFilter, turnoFilter, nameFilter, currentPage]);
+  }, [authLoading, isAuthenticated, anoFilter, serieFilter, turmaFilter, turnoFilter, debouncedNameFilter, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [anoFilter, serieFilter, turmaFilter, turnoFilter, nameFilter]);
+  }, [anoFilter, serieFilter, turmaFilter, turnoFilter, debouncedNameFilter]);
 
   const buildFilters = () => {
     const f: { ano_letivo?: string; serie?: number; turma?: string; turno?: string; nome?: string } = {};
@@ -79,13 +89,18 @@ export default function Students() {
     if (serieFilter && serieFilter !== 'all') f.serie = parseInt(serieFilter, 10);
     if (turmaFilter && turmaFilter !== 'all') f.turma = turmaFilter;
     if (turnoFilter && turnoFilter !== 'all') f.turno = turnoFilter;
-    if (nameFilter.trim()) f.nome = nameFilter.trim();
+    if (debouncedNameFilter.trim()) f.nome = debouncedNameFilter.trim();
     return Object.keys(f).length ? f : undefined;
   };
 
   const fetchStudents = async () => {
     try {
-      setLoading(true);
+      const shouldBlockScreen = students.length === 0;
+      if (shouldBlockScreen) {
+        setLoading(true);
+      } else {
+        setIsFiltering(true);
+      }
       const filters = buildFilters();
       const offset = (currentPage - 1) * STUDENTS_PAGE_SIZE;
       const [data, count] = await Promise.all([
@@ -100,6 +115,7 @@ export default function Students() {
       toast.error('Erro ao carregar alunos');
     } finally {
       setLoading(false);
+      setIsFiltering(false);
     }
   };
   
@@ -221,91 +237,94 @@ export default function Students() {
           </div>
         </div>
 
+        <div className="flex flex-col gap-4 md:flex-row">
+          <div className="flex-1">
+            <Label htmlFor="name-filter">Nome</Label>
+            <Input
+              id="name-filter"
+              placeholder="Filtrar por nome..."
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+            />
+            {isFiltering && (
+              <p className="text-xs text-muted-foreground mt-1">Filtrando...</p>
+            )}
+          </div>
+          <div className="w-full md:w-32">
+            <Label htmlFor="serie-filter">Série</Label>
+            <Select
+              value={serieFilter}
+              onValueChange={setSerieFilter}
+            >
+              <SelectTrigger id="serie-filter">
+                <SelectValue placeholder="Série" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                {series.map((serie) => (
+                  <SelectItem key={serie} value={serie}>
+                    {`${serie}º`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full md:w-32">
+            <Label htmlFor="turma-filter">Turma</Label>
+            <Select
+              value={turmaFilter}
+              onValueChange={setTurmaFilter}
+            >
+              <SelectTrigger id="turma-filter">
+                <SelectValue placeholder="Turma" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                {turmas.map((turma) => (
+                  <SelectItem key={turma} value={turma}>
+                    {turma}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full md:w-40">
+            <Label htmlFor="turno-filter">Turno</Label>
+            <Select
+              value={turnoFilter}
+              onValueChange={setTurnoFilter}
+            >
+              <SelectTrigger id="turno-filter">
+                <SelectValue placeholder="Turno" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {turnos.map((turno) => (
+                  <SelectItem key={turno} value={turno}>
+                    {turno}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-full md:w-32">
+            <AnoLetivoFilter
+              value={anoFilter}
+              onValueChange={setAnoFilter}
+              years={anos}
+              id="ano-filter"
+              placeholder="Ano Letivo"
+            />
+          </div>
+        </div>
+
         {loading ? (
           <div className="h-96 flex items-center justify-center">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
           </div>
         ) : (
           <>
-            <div className="flex flex-col gap-4 md:flex-row">
-              <div className="flex-1">
-                <Label htmlFor="name-filter">Nome</Label>
-                <Input
-                  id="name-filter"
-                  placeholder="Filtrar por nome..."
-                  value={nameFilter}
-                  onChange={(e) => setNameFilter(e.target.value)}
-                />
-              </div>
-              <div className="w-full md:w-32">
-                <Label htmlFor="serie-filter">Série</Label>
-                <Select
-                  value={serieFilter}
-                  onValueChange={setSerieFilter}
-                >
-                  <SelectTrigger id="serie-filter">
-                    <SelectValue placeholder="Série" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    {series.map((serie) => (
-                      <SelectItem key={serie} value={serie}>
-                        {`${serie}º`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-full md:w-32">
-                <Label htmlFor="turma-filter">Turma</Label>
-                <Select
-                  value={turmaFilter}
-                  onValueChange={setTurmaFilter}
-                >
-                  <SelectTrigger id="turma-filter">
-                    <SelectValue placeholder="Turma" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    {turmas.map((turma) => (
-                      <SelectItem key={turma} value={turma}>
-                        {turma}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-full md:w-40">
-                <Label htmlFor="turno-filter">Turno</Label>
-                <Select
-                  value={turnoFilter}
-                  onValueChange={setTurnoFilter}
-                >
-                  <SelectTrigger id="turno-filter">
-                    <SelectValue placeholder="Turno" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {turnos.map((turno) => (
-                      <SelectItem key={turno} value={turno}>
-                        {turno}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="w-full md:w-32">
-                <AnoLetivoFilter
-                  value={anoFilter}
-                  onValueChange={setAnoFilter}
-                  years={anos}
-                  id="ano-filter"
-                  placeholder="Ano Letivo"
-                />
-              </div>
-            </div>
-
             <div className="text-sm text-muted-foreground mb-2">
               Total: <span className="font-semibold">{totalCount}</span> alunos · Página {currentPage} de {totalPages}
             </div>
